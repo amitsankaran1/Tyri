@@ -79,7 +79,8 @@ final class NavigationTests: XCTestCase {
         let draftValue = name.value as? String
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertEqual(app.textFields["List name"].value as? String, draftValue)
-        XCTAssertTrue(app.textFields["List name"].isHittable)
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == YES"), object: app.textFields["List name"])
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)
         capture("05-list-editor-after-orientation-request")
         XCUIDevice.shared.orientation = .portrait
         XCTAssertEqual(app.textFields["List name"].value as? String, draftValue)
