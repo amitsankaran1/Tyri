@@ -5,13 +5,13 @@ Project reference and review screenshots: [Tyri in Notion](https://app.notion.co
 ## Prepare and upload
 
 1. Sign into the existing developer account in Xcode → Settings → Apple Accounts. Unlock the Mac's login keychain and approve signing prompts locally. Do not put passwords or verification codes in shell arguments or project files.
-2. In App Store Connect, open the existing app with bundle ID `name.amitsankaran.Block` (its listing may still be named Block). Check its latest uploaded version/build. The proposed next version is **2.2 (1)**, based on the latest local archive, 2.1 (1). Confirm it is unused before uploading. Update both Tyri and TyriMonitor together if a newer number is needed.
+2. In App Store Connect, open the existing app with bundle ID `name.amitsankaran.Block` (its listing may still be named Block). Check its latest uploaded version/build. The proposed next version is **2.2 (2)**, after Apple rejected build 1 as already used. Confirm the number is unused before uploading. Update both Tyri and TyriMonitor together if a newer number is needed.
 3. From the repository root, make a signed Release archive. Use a new archive path for each attempt; an archive explicitly labeled unsigned is only a compilation check.
 
    ```sh
    xcodebuild -project Tyri.xcodeproj -scheme Tyri \
      -configuration Release -destination 'generic/platform=iOS' \
-     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-1.xcarchive" \
+     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-2.xcarchive" \
      -allowProvisioningUpdates archive
    ```
 
@@ -19,7 +19,7 @@ Project reference and review screenshots: [Tyri in Notion](https://app.notion.co
 
    ```sh
    xcodebuild -exportArchive \
-     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-1.xcarchive" \
+     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-2.xcarchive" \
      -exportPath /tmp/tyri-testflight-upload \
      -exportOptionsPlist release/ExportOptions.plist \
      -allowProvisioningUpdates
