@@ -1,97 +1,87 @@
-//
-//  AppGroupListView.swift
-//  Tyri
-//
-//  "Lists" tab — manage reusable app groups (e.g. "Social media", "Games").
-//
-
 import SwiftUI
 import FamilyControls
 
 struct AppGroupListView: View {
-    @StateObject private var groupStore = AppGroupStore.shared
-    @StateObject private var blockStore = BlockStore.shared
-    @State private var editingGroupID: UUID?
+    @StateObject private var groups = AppGroupStore.shared
+    @StateObject private var blocks = BlockStore.shared
+    @State private var selectedID: UUID?
+    @State private var newGroup: AppGroup?
 
     var body: some View {
-        NavigationView {
-            List {
-                if groupStore.groups.isEmpty {
-                    Text("No app lists yet. Add one to group apps you can then block.")
-                        .font(.system(.subheadline, design: .default))
-                        .foregroundColor(ArtNouveauTheme.secondaryLabel)
+        NavigationSplitView {
+            List(selection: $selectedID) {
+                if groups.groups.isEmpty {
+                    Section {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Choose your distractions").font(.headline)
+                            Text("Group apps and websites into a list, then use it in any block.")
+                                .foregroundStyle(.secondary)
+                            Button { newGroup = AppGroup(name: "") } label: {
+                                Label("Create a list", systemImage: "plus")
+                            }
+                        }
                         .padding(.vertical, 8)
+                    }
                 } else {
                     Section {
-                        ForEach(groupStore.groups) { group in
-                            Button { editingGroupID = group.id } label: {
-                                row(for: group)
+                        ForEach(groups.groups) { group in
+                            NavigationLink(value: group.id) {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(group.name).font(.headline)
+                                        Text(summary(group)).font(.subheadline).foregroundStyle(.secondary)
+                                        if !group.selection.categoryTokens.isEmpty {
+                                            Text("Includes whole categories").font(.caption).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                } icon: {
+                                    Image(systemName: "square.grid.2x2").foregroundStyle(.tint)
+                                }
+                                .padding(.vertical, 4)
                             }
-                            .buttonStyle(.plain)
                         }
                     } footer: {
-                        Text("Lists are snapshots. Choosing a whole category captures the apps installed now — apps added later aren't blocked until you open the list and save it again.")
+                        Text("Lists can be reused by more than one block.")
                     }
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Lists")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        let g = groupStore.create(name: defaultName())
-                        editingGroupID = g.id
-                    } label: {
-                        Image(systemName: "plus")
-                    }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { newGroup = AppGroup(name: "") } label: { Label("Add list", systemImage: "plus") }
                 }
             }
-            .sheet(item: Binding(
-                get: { editingGroupID.map { IdentifiedID(id: $0) } },
-                set: { editingGroupID = $0?.id }
-            )) { wrapper in
-                NavigationView { AppGroupEditorView(groupID: wrapper.id) }
+            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
+        } detail: {
+            if let selectedID, groups.group(id: selectedID) != nil {
+                NavigationStack {
+                    AppGroupEditorView(groupID: selectedID, onFinish: { self.selectedID = nil })
+                        .id(selectedID)
+                }
+            } else {
+                SelectionPlaceholder(title: "Your lists, your rules", systemImage: "square.grid.2x2",
+                                     description: "Choose a list to edit its apps and websites.")
             }
         }
-    }
-
-    private func row(for group: AppGroup) -> some View {
-        let appCount = group.selection.applicationTokens.count
-        let catCount = group.selection.categoryTokens.count
-        let used = groupStore.blockCount(for: group.id, in: blockStore.blocks)
-        return HStack(spacing: 14) {
-            Image(systemName: "square.grid.2x2.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(ArtNouveauTheme.primary)
-                .frame(width: 36)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(group.name)
-                    .font(.system(.headline, design: .default).weight(.semibold))
-                    .foregroundColor(ArtNouveauTheme.label)
-                Text(countSummary(apps: appCount, cats: catCount) + " · used by \(used) block\(used == 1 ? "" : "s")")
-                    .font(.system(.caption, design: .default))
-                    .foregroundColor(ArtNouveauTheme.secondaryLabel)
-                Text("Updated \(group.updatedAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.system(.caption2, design: .default))
-                    .foregroundColor(ArtNouveauTheme.tertiaryLabel)
-}
-            Spacer()
-            Image(systemName: "chevron.right").font(.caption).foregroundColor(ArtNouveauTheme.tertiaryLabel)
+        .navigationSplitViewStyle(.balanced)
+        .sheet(item: $newGroup) { group in
+            NavigationStack { AppGroupEditorView(groupID: group.id, newGroup: group) }
         }
-        .padding(.vertical, 4)
+        .onChange(of: groups.groups.map(\.id)) { ids in
+            if let selectedID, !ids.contains(selectedID) { self.selectedID = nil }
+        }
     }
 
-    private func countSummary(apps: Int, cats: Int) -> String {
-        if apps == 0 && cats == 0 { return "No apps yet" }
+    private func summary(_ group: AppGroup) -> String {
         var parts: [String] = []
+        let apps = group.selection.applicationTokens.count
+        let websites = group.blockedWebDomains.count + group.selection.webDomainTokens.count
         if apps > 0 { parts.append("\(apps) app\(apps == 1 ? "" : "s")") }
-        if cats > 0 { parts.append("\(cats) categor\(cats == 1 ? "y" : "ies")") }
-        return parts.joined(separator: ", ")
-    }
-
-    private func defaultName() -> String {
-        "List \(groupStore.groups.count + 1)"
+        if websites > 0 { parts.append("\(websites) website\(websites == 1 ? "" : "s")") }
+        if parts.isEmpty { parts.append(group.selection.categoryTokens.isEmpty ? "No apps yet" : "Whole categories") }
+        let count = groups.blockCount(for: group.id, in: blocks.blocks)
+        parts.append("\(count) block\(count == 1 ? "" : "s")")
+        return parts.joined(separator: " · ")
     }
 }
-
-/// Small Identifiable wrapper so a bare UUID can drive `.sheet(item:)`.
-struct IdentifiedID: Identifiable { let id: UUID }

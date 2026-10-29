@@ -41,6 +41,12 @@ class BlockStore: ObservableObject {
         return block
     }
 
+    func insert(_ item: BlockRule) {
+        guard !blocks.contains(where: { $0.id == item.id }) else { return }
+        blocks.append(item)
+        flush()
+    }
+
     func update(_ block: BlockRule) {
         guard let idx = blocks.firstIndex(where: { $0.id == block.id }) else { return }
         blocks[idx] = block

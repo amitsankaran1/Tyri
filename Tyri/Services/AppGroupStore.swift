@@ -41,6 +41,12 @@ class AppGroupStore: ObservableObject {
         return group
     }
 
+    func insert(_ item: AppGroup) {
+        guard !groups.contains(where: { $0.id == item.id }) else { return }
+        groups.append(item)
+        flush()
+    }
+
     func update(_ group: AppGroup) {
         guard let idx = groups.firstIndex(where: { $0.id == group.id }) else { return }
         var stamped = group

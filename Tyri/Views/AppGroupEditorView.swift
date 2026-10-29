@@ -12,6 +12,8 @@ import FamilyControls
 
 struct AppGroupEditorView: View {
     let groupID: UUID
+    var newGroup: AppGroup? = nil
+    var onFinish: (() -> Void)? = nil
 
     @StateObject private var groupStore = AppGroupStore.shared
     @StateObject private var blockStore = BlockStore.shared
@@ -20,13 +22,8 @@ struct AppGroupEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
-    // `includeEntireCategory: true` makes the picker expand a whole-category pick
-    // into its individual app tokens, so unchecking an app actually removes it.
-    // With the default (`false`) a category is one opaque token and iOS never
-    // reports the apps the user deselected within it — the long-standing bug where
-    // "select category, uncheck a few" left the unchecked apps blocked. Trade-off:
-    // the selection is a snapshot of apps installed at save time (see the Lists
-    // page "Updated" nudge).
+    // Keep app-level picker granularity when reopening saved selections.
+    // Category tokens, when present, are still whole categories.
     @State private var selection = FamilyActivitySelection(includeEntireCategory: true)
     @State private var blockedDomains: [String] = []
     @State private var newDomain: String = ""
@@ -60,17 +57,20 @@ struct AppGroupEditorView: View {
                     showPicker = true
                 } label: {
                     HStack {
-                        Image(systemName: "square.grid.2x2").foregroundColor(ArtNouveauTheme.primary)
-                        Text(appsLabel).foregroundColor(ArtNouveauTheme.label)
+                        Image(systemName: "square.grid.2x2").foregroundColor(Color.accentColor)
+                        Text(appsLabel).foregroundColor(Color.primary)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(ArtNouveauTheme.tertiaryLabel)
+                            .foregroundColor(Color.secondary)
                     }
                 }
             } header: {
                 Text("Apps")
             } footer: {
+                if !selection.categoryTokens.isEmpty {
+                    Text("Includes whole categories. Every app in those categories can be blocked, including apps installed later. Review the picker to change the selection.")
+                }
                 if !activeReferencingBlocks.isEmpty {
                     Text("In use by an active block — you can add apps and websites, but not remove them until the block ends or is disabled.")
                 }
@@ -79,11 +79,12 @@ struct AppGroupEditorView: View {
             Section {
                 ForEach(blockedDomains, id: \.self) { domain in
                     HStack {
-                        Image(systemName: "globe").foregroundColor(ArtNouveauTheme.primary)
-                        Text(domain).foregroundColor(ArtNouveauTheme.label)
+                        Image(systemName: "globe").foregroundColor(Color.accentColor)
+                        Text(domain).foregroundColor(Color.primary)
                     }
                 }
                 .onDelete { blockedDomains.remove(atOffsets: $0) }
+                .deleteDisabled(!activeReferencingBlocks.isEmpty)
                 HStack {
                     TextField("Add website (e.g. goodreads.com)", text: $newDomain)
                         .textInputAutocapitalization(.never)
@@ -92,9 +93,10 @@ struct AppGroupEditorView: View {
                         .onSubmit(addDomain)
                     Button(action: addDomain) {
                         Image(systemName: "plus.circle.fill")
-                            .foregroundColor(newDomain.isEmpty ? ArtNouveauTheme.tertiaryLabel : ArtNouveauTheme.primary)
+                            .foregroundColor(newDomain.isEmpty ? Color.secondary : Color.accentColor)
                     }
-                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add website")
+                    .buttonStyle(.borderless)
                     .disabled(newDomain.isEmpty)
                 }
             } header: {
@@ -103,31 +105,33 @@ struct AppGroupEditorView: View {
                 Text("Blocked in Safari — including private browsing — with no “allow anyway” option.")
             }
 
-            Section {
-                Button(role: .destructive) {
-                    if activeReferencingBlocks.isEmpty {
-                        showDeleteConfirm = true
-                    } else {
-                        showActiveDeleteAlert = true
+            if newGroup == nil {
+                Section {
+                    Button(role: .destructive) {
+                        if activeReferencingBlocks.isEmpty {
+                            showDeleteConfirm = true
+                        } else {
+                            showActiveDeleteAlert = true
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "trash")
+                            Text("Delete List")
+                        }
                     }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "trash")
-                        Text("Delete List")
+                } footer: {
+                    if usedByCount > 0 {
+                        Text("Used by \(usedByCount) block\(usedByCount == 1 ? "" : "s"). Deleting it removes it from them.")
                     }
-                }
-            } footer: {
-                if usedByCount > 0 {
-                    Text("Used by \(usedByCount) block\(usedByCount == 1 ? "" : "s"). Deleting it removes it from them.")
                 }
             }
         }
-        .navigationTitle("Edit List")
+        .navigationTitle(newGroup == nil ? "List details" : "New list")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Save") { save() }.fontWeight(.semibold)
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .familyActivityPicker(isPresented: $showPicker, selection: $selection)
@@ -153,6 +157,10 @@ struct AppGroupEditorView: View {
             schedulingManager.refresh()
             usageLimitManager.refresh()
         }
+    }
+
+    private func finish() {
+        if let onFinish { onFinish() } else { dismiss() }
     }
 
     private var appsLabel: String {
@@ -187,7 +195,7 @@ struct AppGroupEditorView: View {
     }
 
     private func loadIfNeeded() {
-        guard !hasLoaded, let group = groupStore.group(id: groupID) else { return }
+        guard !hasLoaded, let group = groupStore.group(id: groupID) ?? newGroup else { return }
         name = group.name
         // Assigning the decoded selection would carry its stored flag; re-pin it so
         // editing an existing list keeps app-level granularity (old lists decoded
@@ -199,7 +207,7 @@ struct AppGroupEditorView: View {
     }
 
     private func save() {
-        guard hasLoaded, var group = groupStore.group(id: groupID) else { dismiss(); return }
+        guard hasLoaded, var group = groupStore.group(id: groupID) ?? newGroup else { finish(); return }
 
         // While a referencing block is active, only additive changes may land —
         // compare against the *stored* group so stale editor state can't sneak a
@@ -220,7 +228,9 @@ struct AppGroupEditorView: View {
         group.name = name.isEmpty ? "Untitled" : name
         group.selection = selection
         group.blockedWebDomains = blockedDomains
-        groupStore.update(group)
+        if groupStore.group(id: groupID) == nil { groupStore.insert(group) }
+        else { groupStore.update(group) }
+        groupStore.flush()
         // Re-apply any active block shields that reference this group, since their
         // resolved tokens/domains may have changed.
         for block in blockStore.blocks where block.appGroupIDs.contains(groupID) {
@@ -233,7 +243,7 @@ struct AppGroupEditorView: View {
                 UsageLimitManager.shared.applyUsageLimit(for: block, forceReset: true)
             }
         }
-        dismiss()
+        finish()
     }
 
     private func deleteGroup() {
@@ -249,6 +259,6 @@ struct AppGroupEditorView: View {
             blockStore.update(block)
         }
         groupStore.delete(id: groupID)
-        dismiss()
+        finish()
     }
 }

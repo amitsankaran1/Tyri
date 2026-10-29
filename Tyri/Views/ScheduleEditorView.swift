@@ -9,6 +9,7 @@ struct ScheduleEditorView: View {
     @Binding var schedule: BlockingSchedule?
     @Environment(\.dismiss) private var dismiss
 
+    @State private var hasLoaded = false
     @State private var enabled: Bool = false
     @State private var startDate: Date = Calendar.current.date(from: DateComponents(hour: 9, minute: 0)) ?? Date()
     @State private var endDate: Date = Calendar.current.date(from: DateComponents(hour: 17, minute: 0)) ?? Date()
@@ -22,7 +23,7 @@ struct ScheduleEditorView: View {
         Form {
             Section {
                 Toggle("Enable Schedule", isOn: $enabled)
-                    .tint(ArtNouveauTheme.primary)
+                    .tint(Color.accentColor)
             }
 
             if enabled {
@@ -33,26 +34,21 @@ struct ScheduleEditorView: View {
                     if currentSchedule.crossesMidnight {
                         Label("This block continues past midnight.", systemImage: "moon.stars")
                             .font(.system(.caption, design: .default))
-                            .foregroundColor(ArtNouveauTheme.secondaryLabel)
+                            .foregroundColor(Color.secondary)
                     }
                 }
 
                 Section("Days") {
-                    HStack(spacing: 8) {
-                        ForEach(1...7, id: \.self) { day in
-                            WeekdayToggle(
-                                day: day,
-                                isOn: weekdays.contains(day)
-                            ) {
-                                if weekdays.contains(day) {
-                                    weekdays.remove(day)
-                                } else {
-                                    weekdays.insert(day)
-                                }
+
+                    ForEach(orderedDays, id: \.self) { day in
+                        Toggle(Calendar.current.standaloneWeekdaySymbols[day - 1], isOn: Binding(
+                            get: { weekdays.contains(day) },
+                            set: { selected in
+                                if selected { weekdays.insert(day) } else { weekdays.remove(day) }
                             }
-                        }
+                        ))
                     }
-                    .padding(.vertical, 4)
+
                 }
             }
         }
@@ -64,13 +60,20 @@ struct ScheduleEditorView: View {
                     commit()
                     dismiss()
                 }
-                .foregroundColor(ArtNouveauTheme.primary)
+                .disabled(enabled && weekdays.isEmpty)
             }
         }
         .onAppear { hydrate() }
     }
 
+    private var orderedDays: [Int] {
+        let first = Calendar.current.firstWeekday
+        return (0..<7).map { (first - 1 + $0) % 7 + 1 }
+    }
+
     private func hydrate() {
+        guard !hasLoaded else { return }
+        hasLoaded = true
         if let s = schedule {
             enabled = true
             startDate = Calendar.current.date(from: DateComponents(hour: s.startHour, minute: s.startMinute)) ?? startDate
@@ -99,40 +102,5 @@ struct ScheduleEditorView: View {
         } else {
             schedule = nil
         }
-    }
-}
-
-private struct WeekdayToggle: View {
-    let day: Int
-    let isOn: Bool
-    let onTap: () -> Void
-
-    private var label: String {
-        let symbols = Calendar.current.veryShortStandaloneWeekdaySymbols
-        let index = day - 1
-        return (index >= 0 && index < symbols.count) ? symbols[index] : "?"
-    }
-
-    var body: some View {
-        Button(action: onTap) {
-            Text(label)
-                .font(.system(.subheadline, design: .default).weight(.semibold))
-                .foregroundColor(isOn ? .white : ArtNouveauTheme.label)
-                .frame(width: 36, height: 36)
-                .background(
-                    Group {
-                        if isOn {
-                            Circle().fill(ArtNouveauTheme.primaryGradient)
-                        } else {
-                            Circle().fill(ArtNouveauTheme.secondaryBackground)
-                        }
-                    }
-                )
-                .overlay(
-                    Circle()
-                        .stroke(isOn ? Color.clear : ArtNouveauTheme.border, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
     }
 }

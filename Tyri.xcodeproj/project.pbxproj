@@ -19,6 +19,7 @@
 			remoteGlobalIDString = BD0000000000000000000006;
 			remoteInfo = TyriMonitor;
 		};
+        C1000000000000000000000A = {isa = PBXContainerItemProxy; containerPortal = BE92B2602F0F5EC400D1AD74; proxyType = 1; remoteGlobalIDString = BE92B2672F0F5EC400D1AD74; remoteInfo = Tyri; };
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -39,6 +40,7 @@
 		BD0000000000000000000002 /* TyriMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TyriMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE92B2682F0F5EC400D1AD74 /* Tyri.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tyri.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BEA309FD2F0F768700A5BA71 /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
+        C10000000000000000000002 /* TyriUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TyriUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -80,6 +82,7 @@
 			path = Tyri;
 			sourceTree = "<group>";
 		};
+        C10000000000000000000003 /* TyriUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = TyriUITests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +101,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        C10000000000000000000005 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -107,6 +111,7 @@
 				BE92B26A2F0F5EC400D1AD74 /* Tyri */,
 				BD0000000000000000000004 /* TyriMonitor */,
 				BD0000000000000000000005 /* Shared */,
+				C10000000000000000000003 /* TyriUITests */,
 				BEA309FC2F0F768700A5BA71 /* Frameworks */,
 				BE92B2692F0F5EC400D1AD74 /* Products */,
 			);
@@ -117,6 +122,7 @@
 			children = (
 				BE92B2682F0F5EC400D1AD74 /* Tyri.app */,
 				BD0000000000000000000002 /* TyriMonitor.appex */,
+				C10000000000000000000002 /* TyriUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -180,6 +186,18 @@
 			productReference = BE92B2682F0F5EC400D1AD74 /* Tyri.app */;
 			productType = "com.apple.product-type.application";
 		};
+        C10000000000000000000001 /* TyriUITests */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = C10000000000000000000007;
+            buildPhases = (C10000000000000000000004, C10000000000000000000005, C10000000000000000000006);
+            buildRules = ();
+            dependencies = (C10000000000000000000009);
+            fileSystemSynchronizedGroups = (C10000000000000000000003);
+            name = TyriUITests;
+            productName = TyriUITests;
+            productReference = C10000000000000000000002;
+            productType = "com.apple.product-type.bundle.ui-testing";
+        };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -190,6 +208,7 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+                    C10000000000000000000001 = { CreatedOnToolsVersion = 27.1; TestTargetID = BE92B2672F0F5EC400D1AD74; };
 					BD0000000000000000000006 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -214,6 +233,7 @@
 			targets = (
 				BE92B2672F0F5EC400D1AD74 /* Tyri */,
 				BD0000000000000000000006 /* TyriMonitor */,
+				C10000000000000000000001 /* TyriUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -233,6 +253,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        C10000000000000000000006 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -250,6 +271,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        C10000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -258,6 +280,7 @@
 			target = BD0000000000000000000006 /* TyriMonitor */;
 			targetProxy = BD000000000000000000000F /* PBXContainerItemProxy */;
 		};
+        C10000000000000000000009 = {isa = PBXTargetDependency; target = BE92B2672F0F5EC400D1AD74; targetProxy = C1000000000000000000000A; };
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -504,6 +527,28 @@
 			};
 			name = Release;
 		};
+        C10000000000000000000008 = {isa = XCBuildConfiguration; buildSettings = {
+            CODE_SIGN_STYLE = Automatic;
+            DEVELOPMENT_TEAM = DAG83US2FV;
+            GENERATE_INFOPLIST_FILE = YES;
+            IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+            PRODUCT_BUNDLE_IDENTIFIER = name.amitsankaran.TyriUITests;
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            SWIFT_VERSION = 5.0;
+            TARGETED_DEVICE_FAMILY = "1,2";
+            TEST_TARGET_NAME = Tyri;
+        }; name = Debug; };
+        C1000000000000000000000B = {isa = XCBuildConfiguration; buildSettings = {
+            CODE_SIGN_STYLE = Automatic;
+            DEVELOPMENT_TEAM = DAG83US2FV;
+            GENERATE_INFOPLIST_FILE = YES;
+            IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+            PRODUCT_BUNDLE_IDENTIFIER = name.amitsankaran.TyriUITests;
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            SWIFT_VERSION = 5.0;
+            TARGETED_DEVICE_FAMILY = "1,2";
+            TEST_TARGET_NAME = Tyri;
+        }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -534,6 +579,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+        C10000000000000000000007 = {isa = XCConfigurationList; buildConfigurations = (C10000000000000000000008, C1000000000000000000000B); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = BE92B2602F0F5EC400D1AD74 /* Project object */;

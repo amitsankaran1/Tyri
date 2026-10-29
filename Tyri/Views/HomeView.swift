@@ -1,246 +1,185 @@
-//
-//  HomeView.swift
-//  Tyri
-//
-//  Blocking status home tab: shows the overall shield state, which blocks are
-//  active (by type), and the NFC tag action when a tag block is configured.
-//
-
 import SwiftUI
+import FamilyControls
 
+/// One navigation tree adapts in place. Never replace the editor when size classes change.
 struct HomeView: View {
+    var openLists: () -> Void
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var blockStore = BlockStore.shared
     @StateObject private var groupStore = AppGroupStore.shared
-    @StateObject private var screenTimeManager = ScreenTimeManager.shared
-    @StateObject private var nfcManager = NFCManager.shared
-    @StateObject private var schedulingManager = SchedulingManager.shared
-    @StateObject private var usageLimitManager = UsageLimitManager.shared
-    @StateObject private var configStore = AppConfigurationStore.shared
-    @StateObject private var breakManager = BreakManager.shared
+    @StateObject private var screenTime = ScreenTimeManager.shared
+    @StateObject private var nfc = NFCManager.shared
+    @StateObject private var config = AppConfigurationStore.shared
+    @StateObject private var scheduling = SchedulingManager.shared
+    @StateObject private var usage = UsageLimitManager.shared
+    @StateObject private var breaks = BreakManager.shared
+    @State private var selectedID: UUID?
+    @State private var newBlock: BlockRule?
     @State private var showSettings = false
 
-    /// Blocks whose shield is lifted for a break right now. They stay out of the
-    /// "active" groups below — the shield really is down — but get their own
-    /// "On break" group so the state is never invisible.
-    private var onBreakBlocks: [BlockRule] {
-        blockStore.blocks.filter { breakManager.isOnBreak(blockID: $0.id) }
+    private var authorized: Bool { screenTime.authorizationStatus == .approved }
+    private var active: [BlockRule] {
+        blockStore.blocks.filter { screenTime.isBlockActive($0) && !breaks.isOnBreak(blockID: $0.id) }
     }
-    private var activeScheduledBlocks: [BlockRule] {
-        blockStore.blocks.filter {
-            schedulingManager.activeScheduledBlockIDs.contains($0.id) && !breakManager.isOnBreak(blockID: $0.id)
-        }
+    private var onBreak: [BlockRule] {
+        blockStore.blocks.filter { breaks.isOnBreak(blockID: $0.id) }
     }
-    private var activeUsageLockBlocks: [BlockRule] {
-        blockStore.blocks.filter { usageLimitManager.activeUsageLockBlockIDs.contains($0.id) }
+    private var configured: [BlockRule] {
+        blockStore.blocks.filter { !screenTime.isBlockActive($0) && !breaks.isOnBreak(blockID: $0.id) }
     }
-    /// Tag blocks toggled on — drives the NFC action button (a tag block on break
-    /// is still "on"; the next tap turns it off).
-    private var enabledTagBlocks: [BlockRule] {
-        blockStore.blocks.filter { $0.type == .tag && $0.isEnabled }
-    }
-    private var activeTagBlocks: [BlockRule] {
-        enabledTagBlocks.filter { !breakManager.isOnBreak(blockID: $0.id) }
-    }
-    private var anyShieldActive: Bool {
-        !activeScheduledBlocks.isEmpty || !activeUsageLockBlocks.isEmpty || !activeTagBlocks.isEmpty
-    }
-    private var hasTagBlock: Bool { blockStore.blocks.contains { $0.type == .tag } }
+    private var tagIsOn: Bool { blockStore.blocks(ofType: .tag).contains { $0.isEnabled } }
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                LinearGradient(
-                    colors: [ArtNouveauTheme.background, ArtNouveauTheme.secondaryBackground.opacity(0.3)],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    statusSection
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 48)
-                        .padding(.bottom, 32)
-                        .padding(.horizontal, 24)
-
-                    Spacer(minLength: 0)
-
-                    actionArea
-                        .frame(maxWidth: .infinity)
-
-                    Spacer(minLength: 0)
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gear").foregroundColor(ArtNouveauTheme.primary)
-                    }
-                }
-            }
-            .sheet(isPresented: $showSettings) {
-                NavigationView { SettingsView() }
-            }
-            .onAppear {
-                screenTimeManager.checkAuthorizationStatus()
-                schedulingManager.refresh()
-                usageLimitManager.reconcileExpiredLocks()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                schedulingManager.refresh()
-                usageLimitManager.reconcileExpiredLocks()
-            }
-        }
-    }
-
-    // MARK: - Status
-
-    private var statusSection: some View {
-        VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .fill(anyShieldActive ? ArtNouveauTheme.errorGradient : ArtNouveauTheme.successGradient)
-                    .frame(width: 120, height: 120)
-                    .shadow(color: (anyShieldActive ? ArtNouveauTheme.error : ArtNouveauTheme.success).opacity(0.4), radius: 16, x: 0, y: 8)
-                Image(systemName: anyShieldActive ? "lock.shield.fill" : "lock.open.fill")
-                    .font(.system(size: 48, weight: .bold))
-                    .foregroundColor(.white)
-                    .symbolRenderingMode(.hierarchical)
-            }
-            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: anyShieldActive)
-
-            HStack(spacing: 8) {
-                Circle().fill(anyShieldActive ? ArtNouveauTheme.error : ArtNouveauTheme.success).frame(width: 10, height: 10)
-                Text(anyShieldActive ? "BLOCKING ACTIVE" : "BLOCKING INACTIVE")
-                    .font(.system(.subheadline, design: .default).weight(.bold))
-                    .tracking(1.2)
-                    .foregroundColor(anyShieldActive ? ArtNouveauTheme.error : ArtNouveauTheme.success)
-            }
-            .padding(.horizontal, 20).padding(.vertical, 10)
-            .background(Capsule().fill(anyShieldActive ? ArtNouveauTheme.errorLight : ArtNouveauTheme.successLight))
-
-            activeBlockGroups
-        }
-    }
-
-    @ViewBuilder
-    private var activeBlockGroups: some View {
-        VStack(spacing: 14) {
-            capsuleGroup("Scheduled", color: ArtNouveauTheme.error, icon: "clock.fill",
-                         labels: activeScheduledBlocks.map { $0.name })
-            capsuleGroup("Usage locked", color: ArtNouveauTheme.warning, icon: "hourglass",
-                         labels: activeUsageLockBlocks.map { usageLockLabel(for: $0) })
-            capsuleGroup("Tag on", color: ArtNouveauTheme.primary, icon: "sensor.tag.radiowaves.forward.fill",
-                         labels: activeTagBlocks.map { $0.name })
-            capsuleGroup("On break", color: ArtNouveauTheme.success, icon: "cup.and.saucer.fill",
-                         labels: onBreakBlocks.map { breakLabel(for: $0) })
-        }
-    }
-
-    @ViewBuilder
-    private func capsuleGroup(_ title: String, color: Color, icon: String, labels: [String]) -> some View {
-        if !labels.isEmpty {
-            VStack(spacing: 6) {
-                Text(title.uppercased())
-                    .font(.system(.caption2, design: .default).weight(.bold)).tracking(1.0)
-                    .foregroundColor(ArtNouveauTheme.secondaryLabel)
-                FlowRow(labels) { label in
-                    HStack(spacing: 4) {
-                        Image(systemName: icon).font(.system(size: 9, weight: .bold)).foregroundColor(color)
-                        Text(label).font(.system(.caption, design: .default).weight(.semibold)).foregroundColor(color)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Capsule().fill(color.opacity(0.15)))
-                }
-            }
-        }
-    }
-
-    private func usageLockLabel(for block: BlockRule) -> String {
-        guard let endsAt = usageLimitManager.lockEnd(for: block.id) else { return block.name }
-        let mins = max(0, Int(endsAt.timeIntervalSinceNow / 60))
-        let suffix = mins >= 60 ? "\(mins / 60)h \(mins % 60)m" : "\(mins)m"
-        return "\(block.name) · \(suffix)"
-    }
-
-    private func breakLabel(for block: BlockRule) -> String {
-        guard let endsAt = BreakMonitoring.breakEnd(blockID: block.id) else { return block.name }
-        let secs = max(0, Int(endsAt.timeIntervalSinceNow))
-        return "\(block.name) · \(String(format: "%d:%02d", secs / 60, secs % 60))"
-    }
-
-    // MARK: - Action area
-
-    @ViewBuilder
-    private var actionArea: some View {
-        if hasTagBlock && configStore.isTagRegistered {
-            if nfcManager.isScanning {
-                ArtNouveauCard(shadow: ArtNouveauTheme.shadowLarge) {
-                    VStack(spacing: 20) {
-                        ProgressView().controlSize(.large).tint(ArtNouveauTheme.primary)
-                        Text("Hold iPhone near your tag")
-                            .font(.system(.headline, design: .default).weight(.bold))
-                            .foregroundColor(ArtNouveauTheme.label)
-                        Button("Cancel") { nfcManager.stopScanning() }
-                            .buttonStyle(ArtNouveauButtonStyle(isProminent: false))
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 12)
-                }
-                .padding(.horizontal, 24)
-            } else {
-                Button { nfcManager.startScanning() } label: {
-                    ArtNouveauCard(shadow: ArtNouveauTheme.shadowLarge) {
-                        VStack(spacing: 20) {
-                            ZStack {
-                                Circle().fill(ArtNouveauTheme.primaryGradient).frame(width: 76, height: 76)
-                                Image(systemName: "sensor.tag.radiowaves.forward.fill")
-                                    .font(.system(size: 34, weight: .semibold)).foregroundColor(.white)
-                                    .symbolRenderingMode(.hierarchical)
+        NavigationSplitView {
+            List(selection: $selectedID) {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(authorized ? (active.isEmpty ? "No active blocks" : "Blocking is on") : "Let's get set up",
+                              systemImage: authorized && !active.isEmpty ? "lock.shield.fill" : "lock.shield")
+                            .font(.title2.bold())
+                            .foregroundStyle(.primary)
+                        Text(statusDescription).font(.subheadline).foregroundStyle(.secondary)
+                        if !blockStore.blocks(ofType: .tag).isEmpty && config.isTagRegistered {
+                            if nfc.isScanning {
+                                ProgressView("Hold iPhone near your tag")
+                                Button("Cancel scan") { nfc.stopScanning() }
+                            } else {
+                                Button { nfc.startScanning() } label: {
+                                    Label(tagIsOn ? "Stop tag blocks" : "Start tag blocks",
+                                          systemImage: "sensor.tag.radiowaves.forward")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .primaryActionButton()
+                                .disabled(!authorized)
                             }
-                            Text(enabledTagBlocks.isEmpty ? "Start Blocking" : "Stop Blocking")
-                                .font(.system(.title2, design: .default).weight(.bold))
-                                .foregroundColor(ArtNouveauTheme.label)
-                            Text("Tap your tag to \(enabledTagBlocks.isEmpty ? "enable" : "disable") your tag blocks")
-                                .font(.system(.subheadline, design: .default).weight(.medium))
-                                .foregroundColor(ArtNouveauTheme.secondaryLabel)
-                                .multilineTextAlignment(.center)
                         }
-                        .frame(maxWidth: .infinity).padding(.vertical, 16)
+                    }
+                    .padding(.vertical, 12)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+                if !authorized || groupStore.groups.isEmpty || blockStore.blocks.isEmpty {
+                    Section("Get started") {
+                        if !authorized {
+                            Button { showSettings = true } label: {
+                                Label("Allow Screen Time access", systemImage: "hand.raised")
+                            }
+                        }
+                        if groupStore.groups.isEmpty {
+                            Button(action: openLists) {
+                                Label("Choose apps to block", systemImage: "square.grid.2x2")
+                            }
+                        }
+                        if blockStore.blocks.isEmpty {
+                            Button { newBlock = BlockRule(name: "", type: .tag) } label: {
+                                Label("Create your first block", systemImage: "plus")
+                            }
+                        }
                     }
                 }
-                .buttonStyle(ScaleButtonStyle())
-                .padding(.horizontal, 24)
-            }
-        } else if blockStore.blocks.isEmpty {
-            ArtNouveauCard(shadow: ArtNouveauTheme.shadowLarge) {
-                VStack(spacing: 14) {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(.system(size: 36, weight: .semibold)).foregroundColor(ArtNouveauTheme.primary)
-                        .symbolRenderingMode(.hierarchical)
-                    Text("No blocks yet")
-                        .font(.system(.title3, design: .default).weight(.bold)).foregroundColor(ArtNouveauTheme.label)
-                    Text("Create an app list in Lists, then add a block in Blocks to start.")
-                        .font(.system(.subheadline, design: .default)).foregroundColor(ArtNouveauTheme.secondaryLabel)
-                        .multilineTextAlignment(.center)
+                if !blockStore.blocks(ofType: .tag).isEmpty && !config.isTagRegistered {
+                    Section {
+                        Button { showSettings = true } label: {
+                            Label("Connect your NFC tag", systemImage: "sensor.tag.radiowaves.forward")
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                blockSection(authorized ? "Blocking now" : "Configured as active", blocks: active)
+                blockSection("On break", blocks: onBreak)
+                blockSection("Your blocks", blocks: configured)
             }
-            .padding(.horizontal, 24)
+            .listStyle(.insetGrouped)
+            .navigationTitle("Focus")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        ForEach([BlockType.tag, .schedule, .timer], id: \.self) { type in
+                            Button { newBlock = BlockRule(name: "", type: type) } label: {
+                                Label(BlockTypeStyle.title(type), systemImage: BlockTypeStyle.icon(type))
+                            }
+                        }
+                    } label: { Label("Add block", systemImage: "plus") }
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
+        } detail: {
+            if let selectedID, blockStore.block(id: selectedID) != nil {
+                NavigationStack {
+                    BlockEditorView(blockID: selectedID, onFinish: { self.selectedID = nil })
+                        .id(selectedID)
+                }
+            } else {
+                SelectionPlaceholder(title: "Make room for focus", systemImage: "lock.shield",
+                                     description: "Choose a block to view its settings, or add a new one.")
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: $showSettings) { NavigationStack { SettingsView() } }
+        .sheet(item: $newBlock) { block in
+            NavigationStack {
+                BlockEditorView(blockID: block.id, newBlock: block)
+            }
+        }
+        .alert("Couldn't scan tag", isPresented: Binding(
+            get: { nfc.errorMessage != nil },
+            set: { if !$0 { nfc.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { nfc.errorMessage = nil }
+        } message: { Text(nfc.errorMessage ?? "Please try again.") }
+        .onAppear(perform: refresh)
+        .onChange(of: scenePhase) { phase in if phase == .active { refresh() } }
+        .onChange(of: blockStore.blocks.map(\.id)) { ids in
+            if let selectedID, !ids.contains(selectedID) { self.selectedID = nil }
         }
     }
-}
 
-/// Lightweight wrapping row of chips (avoids a hard dependency on iOS 16 Layout).
-private struct FlowRow<Item: Hashable, Cell: View>: View {
-    let items: [Item]
-    let cell: (Item) -> Cell
-    init(_ items: [Item], @ViewBuilder cell: @escaping (Item) -> Cell) {
-        self.items = items
-        self.cell = cell
-    }
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(items, id: \.self) { cell($0) }
+    @ViewBuilder
+    private func blockSection(_ title: String, blocks: [BlockRule]) -> some View {
+        if !blocks.isEmpty {
+            Section(title) {
+                ForEach(blocks) { block in
+                    NavigationLink(value: block.id) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(block.name).font(.headline)
+                                Text(summary(block)).font(.subheadline).foregroundStyle(.secondary)
+                                if breaks.isOnBreak(blockID: block.id), let end = BreakMonitoring.breakEnd(blockID: block.id) {
+                                    Text(end, style: .timer).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                } else if block.type == .timer, let end = usage.lockEnd(for: block.id) {
+                                    Text("Locked until \(end.formatted(date: .omitted, time: .shortened))")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: breaks.isOnBreak(blockID: block.id) ? "cup.and.saucer" : BlockTypeStyle.icon(block.type))
+                                .foregroundStyle(.tint)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
         }
+    }
+
+    private var statusDescription: String {
+        if !authorized { return "Allow Screen Time access to start blocking distractions." }
+        if !onBreak.isEmpty && active.isEmpty { return "You're on a break. Blocking will resume automatically." }
+        if active.isEmpty { return "Your apps are available. Start a tag block or let your schedules take over." }
+        return "\(active.count) block\(active.count == 1 ? " is" : "s are") helping you focus."
+    }
+    private func summary(_ block: BlockRule) -> String {
+        switch block.type {
+        case .schedule: return block.schedule?.summary ?? "No schedule set"
+        case .timer: return "\(BlockEditorView.minutesLabel(block.usageLimitMinutes ?? 30)) daily limit"
+        case .tag: return tagIsOn && block.isEnabled ? "On until you scan your tag" : "Start with your NFC tag"
+        }
+    }
+    private func refresh() {
+        screenTime.checkAuthorizationStatus()
+        scheduling.refresh()
+        usage.reconcileExpiredLocks()
     }
 }
