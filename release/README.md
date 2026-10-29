@@ -32,6 +32,14 @@ Project reference and review screenshots: [Tyri in Notion](https://app.notion.co
 
 Keep the app and extension bundle IDs, App Group, and existing Family Controls/NFC entitlements. Both distribution profiles must support Family Controls. Simulator UI results do not establish physical shielding or NFC behavior.
 
+### Signing from a remote session
+
+Unlocking the login keychain can restore Xcode's saved account access even if the local development key remains unavailable to `codesign`. Apple's cloud-managed distribution signing was usable in this situation.
+
+For the 2.2 candidate, a separate copy of the compiled archive was ad-hoc signed with each target's source entitlements, then re-signed by Xcode's automatic App Store Connect export. The ad-hoc input is not a distribution build. Exporting the plain unsigned archive omitted required entitlements, so that package was rejected during local verification and was not uploaded.
+
+Before uploading a remotely signed package, verify both code signatures and embedded Store profiles. The app must retain Family Controls, NFC `TAG`, and `group.com.amitsankaran.Block`; the monitor must retain Family Controls and the same App Group. Both need the expected application identifiers, `beta-reports-active = true`, and `get-task-allow = false`. Check the final version/build in both bundles. The distribution certificate must be Apple's distribution identity, not the temporary ad-hoc signature.
+
 ## Add friends as testers
 
 1. Open App Store Connect → Apps → the existing app → TestFlight.
