@@ -1,0 +1,48 @@
+# TestFlight
+
+Project reference and review screenshots: [Tyri in Notion](https://app.notion.com/p/2e616e0e0e3a80148841ff8ca2cb3647).
+
+## Prepare and upload
+
+1. Sign into the existing developer account in Xcode → Settings → Apple Accounts. Unlock the Mac's login keychain and approve signing prompts locally. Do not put passwords or verification codes in shell arguments or project files.
+2. In App Store Connect, open the existing app with bundle ID `name.amitsankaran.Block` (its listing may still be named Block). Check its latest uploaded version/build. The proposed next version is **2.2 (1)**, based on the latest local archive, 2.1 (1). Confirm it is unused before uploading. Update both Tyri and TyriMonitor together if a newer number is needed.
+3. From the repository root, make a signed Release archive. Use a new archive path for each attempt; an archive explicitly labeled unsigned is only a compilation check.
+
+   ```sh
+   xcodebuild -project Tyri.xcodeproj -scheme Tyri \
+     -configuration Release -destination 'generic/platform=iOS' \
+     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-1.xcarchive" \
+     -allowProvisioningUpdates archive
+   ```
+
+4. Upload the signed archive. This command sends the build to Apple; it does not publish an App Store release. Build-number management is disabled in the export settings to keep the uploaded number tied to the source revision.
+
+   ```sh
+   xcodebuild -exportArchive \
+     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-1.xcarchive" \
+     -exportPath /tmp/tyri-testflight-upload \
+     -exportOptionsPlist release/ExportOptions.plist \
+     -allowProvisioningUpdates
+   ```
+
+   Alternatively, open the signed archive in Xcode's Organizer and choose Distribute App → App Store Connect → Upload. Keep external TestFlight distribution available if friends will test it.
+
+5. Wait for processing in App Store Connect → app → TestFlight. Resolve any export-compliance or test-information requirements accurately. Upload success alone does not mean the build is available to testers. Confirm its version/build, status, expiry, and group assignment.
+6. Use [WhatToTest.txt](WhatToTest.txt) for the beta testing notes. Add the candidate to the existing tester group. External distribution may require TestFlight App Review. Record the source commit, final build number, processing status, and groups in Notion.
+
+Keep the app and extension bundle IDs, App Group, and existing Family Controls/NFC entitlements. Both distribution profiles must support Family Controls. Simulator UI results do not establish physical shielding or NFC behavior.
+
+## Add friends as testers
+
+1. Open App Store Connect → Apps → the existing app → TestFlight.
+2. Under **External Testing**, select the existing group, or use **+** to create one such as “Friends & Family.” If no internal group exists yet, create one under **Internal Testing** first; Apple requires that before creating an external group.
+3. Choose **Add Builds**, select the fresh processed build, add testing notes, and submit it for TestFlight App Review if requested. External testers can install it after approval and distribution to their group.
+4. For specific people, use **+** beside **Testers** → **Email**, then enter their email addresses and send invitations.
+5. For a reusable invitation, use **Create Public Link** in the group's Testers tab, set an appropriate tester limit, and copy the link. Anyone receiving a forwarded public link may be able to join.
+6. Testers install Apple's TestFlight app on their iPhones, open the invitation email or link on the phone, accept, and install Tyri. Existing group members can update when a new available build is assigned to that group.
+
+Use external tester groups for friends. Internal testers are members of your App Store Connect team and need an eligible team role.
+
+Builds expire 90 days after upload; an expired build needs a fresh uploaded build to resume testing. Each future refresh should increment the build number, archive, upload, confirm processing, and assign the new build to the tester group.
+
+Apple references: [TestFlight overview](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/), [invite external testers](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/), [add internal testers](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers/).
