@@ -5,7 +5,7 @@ Project reference and review screenshots: [Tyri in Notion](https://app.notion.co
 ## Prepare and upload
 
 1. Sign into the existing developer account in Xcode → Settings → Apple Accounts. Unlock the Mac's login keychain and approve signing prompts locally. Do not put passwords or verification codes in shell arguments or project files.
-2. In App Store Connect, open the existing app with bundle ID `name.amitsankaran.Block` (its listing may still be named Block). Check its latest uploaded version/build. The proposed next version is **2.3 (3)**, after Apple rejected the closed 2.2 release train. Confirm the number is unused before uploading. Update both Tyri and TyriMonitor together if a newer number is needed.
+2. In [Tyri's App Store Connect record](https://appstoreconnect.apple.com/apps/6757515805), open TestFlight and check the latest uploaded version/build. The candidate documented here is **2.3 (3)**, after Apple rejected the closed 2.2 release train. For each future upload, choose an unused version/build and update both Tyri and TyriMonitor together. The commands below use this candidate's archive name; use a fresh path and number for a new candidate.
 3. From the repository root, make a signed Release archive. Use a new archive path for each attempt; an archive explicitly labeled unsigned is only a compilation check.
 
    ```sh
@@ -42,7 +42,7 @@ Before uploading a remotely signed package, verify both code signatures and embe
 
 ## Add friends as testers
 
-1. Open App Store Connect → Apps → the existing app → TestFlight.
+1. Open [Tyri in App Store Connect](https://appstoreconnect.apple.com/apps/6757515805) → TestFlight.
 2. Under **External Testing**, select the existing group, or use **+** to create one such as “Friends & Family.” If no internal group exists yet, create one under **Internal Testing** first; Apple requires that before creating an external group.
 3. Choose **Add Builds**, select the fresh processed build, add testing notes, and submit it for TestFlight App Review if requested. External testers can install it after approval and distribution to their group.
 4. For specific people, use **+** beside **Testers** → **Email**, then enter their email addresses and send invitations.
