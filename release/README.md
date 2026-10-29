@@ -5,13 +5,13 @@ Project reference and review screenshots: [Tyri in Notion](https://app.notion.co
 ## Prepare and upload
 
 1. Sign into the existing developer account in Xcode → Settings → Apple Accounts. Unlock the Mac's login keychain and approve signing prompts locally. Do not put passwords or verification codes in shell arguments or project files.
-2. In App Store Connect, open the existing app with bundle ID `name.amitsankaran.Block` (its listing may still be named Block). Check its latest uploaded version/build. The proposed next version is **2.2 (2)**, after Apple rejected build 1 as already used. Confirm the number is unused before uploading. Update both Tyri and TyriMonitor together if a newer number is needed.
+2. In App Store Connect, open the existing app with bundle ID `name.amitsankaran.Block` (its listing may still be named Block). Check its latest uploaded version/build. The proposed next version is **2.3 (3)**, after Apple rejected the closed 2.2 release train. Confirm the number is unused before uploading. Update both Tyri and TyriMonitor together if a newer number is needed.
 3. From the repository root, make a signed Release archive. Use a new archive path for each attempt; an archive explicitly labeled unsigned is only a compilation check.
 
    ```sh
    xcodebuild -project Tyri.xcodeproj -scheme Tyri \
      -configuration Release -destination 'generic/platform=iOS' \
-     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-2.xcarchive" \
+     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.3-3.xcarchive" \
      -allowProvisioningUpdates archive
    ```
 
@@ -19,7 +19,7 @@ Project reference and review screenshots: [Tyri in Notion](https://app.notion.co
 
    ```sh
    xcodebuild -exportArchive \
-     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.2-2.xcarchive" \
+     -archivePath "$HOME/Library/Developer/Xcode/Archives/Tyri-2.3-3.xcarchive" \
      -exportPath /tmp/tyri-testflight-upload \
      -exportOptionsPlist release/ExportOptions.plist \
      -allowProvisioningUpdates
@@ -36,7 +36,7 @@ Keep the app and extension bundle IDs, App Group, and existing Family Controls/N
 
 Unlocking the login keychain can restore Xcode's saved account access even if the local development key remains unavailable to `codesign`. Apple's cloud-managed distribution signing was usable in this situation.
 
-For the 2.2 candidate, a separate copy of the compiled archive was ad-hoc signed with each target's source entitlements, then re-signed by Xcode's automatic App Store Connect export. The ad-hoc input is not a distribution build. Exporting the plain unsigned archive omitted required entitlements, so that package was rejected during local verification and was not uploaded.
+For the remote signing workflow, a separate copy of the compiled archive was ad-hoc signed with each target's source entitlements, then re-signed by Xcode's automatic App Store Connect export. The ad-hoc input is not a distribution build. Exporting the plain unsigned archive omitted required entitlements, so that package was rejected during local verification and was not uploaded.
 
 Before uploading a remotely signed package, verify both code signatures and embedded Store profiles. The app must retain Family Controls, NFC `TAG`, and `group.com.amitsankaran.Block`; the monitor must retain Family Controls and the same App Group. Both need the expected application identifiers, `beta-reports-active = true`, and `get-task-allow = false`. Check the final version/build in both bundles. The distribution certificate must be Apple's distribution identity, not the temporary ad-hoc signature.
 

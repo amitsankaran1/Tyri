@@ -1,4 +1,4 @@
-Tyri 2.2: simplified native SwiftUI interface with Focus and Lists tabs and Settings in the toolbar.
+Tyri 2.3: simplified native SwiftUI interface with Focus and Lists tabs and Settings in the toolbar.
 
 Please check:
 - Existing lists and blocking rules remain after updating.
