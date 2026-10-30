@@ -2,6 +2,8 @@
 
 Project reference and review screenshots: [Tyri in Notion](https://app.notion.com/p/2e616e0e0e3a80148841ff8ca2cb3647).
 
+Version **2.3 (3)** uploaded successfully on October 29, 2026. Apple reported that the package was processing; processing completion and tester-group assignment have not been verified. The [upload receipt](builds/2.3-3.json) records the archived source revision, package hash, and verified distribution entitlements.
+
 ## Prepare and upload
 
 1. Sign into the existing developer account in Xcode → Settings → Apple Accounts. Unlock the Mac's login keychain and approve signing prompts locally. Do not put passwords or verification codes in shell arguments or project files.

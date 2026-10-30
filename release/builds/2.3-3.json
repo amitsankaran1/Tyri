@@ -1,0 +1,52 @@
+{
+  "version": "2.3",
+  "build": "3",
+  "appStoreId": "6757515805",
+  "sourceCommit": "fe734ef1ed4cce2580626557ab8cc4d8bb0d8733",
+  "packageSHA256": "fdde8a60aa4de42faccce84890af2caf7d10de23920af97abf7b0909980684db",
+  "signing": "Cloud Managed Apple Distribution",
+  "uploadCompletedUTC": "2026-10-29T21:37:37Z",
+  "uploadStatus": "Upload succeeded; package processing reported by Apple",
+  "processingCompletionVerified": false,
+  "testerGroupAssignmentVerified": false,
+  "nfcTested": false,
+  "products": [
+    {
+      "product": "Tyri.app",
+      "version": "2.3 (3)",
+      "identifier": "name.amitsankaran.Block",
+      "signatureVerified": true,
+      "entitlements": {
+        "application-identifier": "DAG83US2FV.name.amitsankaran.Block",
+        "beta-reports-active": true,
+        "com.apple.developer.family-controls": true,
+        "com.apple.developer.nfc.readersession.formats": [
+          "TAG"
+        ],
+        "com.apple.developer.team-identifier": "DAG83US2FV",
+        "com.apple.security.application-groups": [
+          "group.com.amitsankaran.Block"
+        ],
+        "get-task-allow": false
+      },
+      "profileExpiration": "2027-10-10 06:50:53"
+    },
+    {
+      "product": "TyriMonitor.appex",
+      "version": "2.3 (3)",
+      "identifier": "name.amitsankaran.Block.BlockMonitor",
+      "signatureVerified": true,
+      "entitlements": {
+        "application-identifier": "DAG83US2FV.name.amitsankaran.Block.BlockMonitor",
+        "beta-reports-active": true,
+        "com.apple.developer.family-controls": true,
+        "com.apple.developer.team-identifier": "DAG83US2FV",
+        "com.apple.security.application-groups": [
+          "group.com.amitsankaran.Block"
+        ],
+        "get-task-allow": false
+      },
+      "profileExpiration": "2027-10-10 06:50:53"
+    }
+  ]
+}
