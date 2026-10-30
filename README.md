@@ -1,8 +1,8 @@
-# Block App - Design Documentation
+# Tyri - Design Documentation
 
 ## App Overview
 
-**Block** is an iOS app that uses NFC tags to toggle app blocking on and off. Users register an NFC tag, select apps to block, and then scan the tag to instantly enable or disable blocking for those apps. The app leverages iOS Screen Time APIs to enforce app blocking.
+**Tyri** is an iOS app that uses NFC tags to toggle app blocking on and off. Users register an NFC tag, select apps to block, and then scan the tag to instantly enable or disable blocking for those apps. The app leverages iOS Screen Time APIs to enforce app blocking.
 
 ### Core Concept
 - **Physical trigger**: NFC tag acts as a physical switch
@@ -28,8 +28,8 @@
 
 ### App Structure
 ```
-Block/
-├── BlockApp.swift              # App entry point
+Tyri/
+├── TyriApp.swift               # App entry point
 ├── ContentView.swift           # Main screen
 ├── Views/
 │   ├── SettingsView.swift      # App selection screen
@@ -109,7 +109,7 @@ Block/
    - Status: "Registered" or "Not Registered"
 
 #### Navigation
-- Title: "Block"
+- Title: "Tyri"
 - Sheet modals for Settings and Tag Registration
 
 ---
@@ -384,6 +384,6 @@ Block/
 
 ## Summary
 
-Block is a focused, single-purpose app with a clean, status-driven interface. The design emphasizes clarity and simplicity, with clear visual feedback for all states. The three-screen architecture (Main, Settings, Tag Registration) keeps the user flow straightforward and the UI uncluttered.
+Tyri is a focused, single-purpose app with a clean, status-driven interface. The design emphasizes clarity and simplicity, with clear visual feedback for all states. The three-screen architecture (Main, Settings, Tag Registration) keeps the user flow straightforward and the UI uncluttered.
 
 The app's strength is its physical interaction model (NFC tag) combined with iOS's robust app blocking system, creating a unique and effective solution for managing app access.

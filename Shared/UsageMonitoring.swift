@@ -1,15 +1,15 @@
 //
 //  UsageMonitoring.swift
-//  Block
+//  Tyri
 //
 //  Shared DeviceActivity registration for the usage-timer mechanic. Used by:
 //    - UsageLimitManager (app side: registers monitors, observable state)
-//    - BlockMonitorExtension (re-arms the budget when a lockout ends)
+//    - TyriMonitorExtension (re-arms the budget when a lockout ends)
 //
 //  Keeping registration here — rather than duplicated in app + extension —
 //  mirrors `BlockingActuator`, so both sides build identical monitors.
 //
-//  Add target membership to BOTH Block and BlockMonitor targets.
+//  Add target membership to BOTH Tyri and TyriMonitor targets.
 //
 
 import Foundation

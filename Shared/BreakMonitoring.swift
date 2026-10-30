@@ -1,16 +1,16 @@
 //
 //  BreakMonitoring.swift
-//  Block
+//  Tyri
 //
 //  Shared plumbing for a bounded break from an active schedule/tag block: the
 //  shield lifts immediately and re-applies automatically when the break ends,
 //  even if the app is killed — a one-shot DeviceActivity window (mirroring
-//  UsageMonitoring's lockout window) has the BlockMonitor extension re-shield
+//  UsageMonitoring's lockout window) has the TyriMonitor extension re-shield
 //  out-of-process. Used by:
 //    - BreakManager (app side: starts breaks, observable countdown, launch backstop)
-//    - BlockMonitorExtension (re-applies the shield when the break window ends)
+//    - TyriMonitorExtension (re-applies the shield when the break window ends)
 //
-//  Add target membership to BOTH Block and BlockMonitor targets.
+//  Add target membership to BOTH Tyri and TyriMonitor targets.
 //
 
 import Foundation

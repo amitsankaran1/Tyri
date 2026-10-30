@@ -1,13 +1,13 @@
 //
 //  BlockingActuator.swift
-//  Block
+//  Tyri
 //
 //  Shared shielding logic for a block. Used by:
-//    - BlockMonitorExtension (real device, on schedule / threshold)
+//    - TyriMonitorExtension (real device, on schedule / threshold)
 //    - DebugSimulator (in-process, for simulator/dev testing)
 //
 //  A block's shield = the union of its referenced AppGroups' tokens
-//  (see BlockResolution). Add target membership to BOTH Block and BlockMonitor.
+//  (see BlockResolution). Add target membership to BOTH Tyri and TyriMonitor.
 //
 
 import Foundation
@@ -17,7 +17,7 @@ import FamilyControls
 enum BlockingActuator {
 
     /// Apply the block's shield to its named store.
-    /// Mirrors `BlockMonitorExtension.intervalDidStart` so simulator and device
+    /// Mirrors `TyriMonitorExtension.intervalDidStart` so simulator and device
     /// behavior stay in lockstep.
     ///
     /// - Parameter setRunningFlag: when `true` (scheduled blocks), marks the

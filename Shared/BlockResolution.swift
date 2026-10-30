@@ -1,16 +1,16 @@
 //
 //  BlockResolution.swift
-//  Block
+//  Tyri
 //
 //  Resolves a BlockRule to the enforcement tokens it should shield: the union of
-//  its referenced AppGroups' tokens. Shared by the app and the BlockMonitor
+//  its referenced AppGroups' tokens. Shared by the app and the TyriMonitor
 //  extension so both compute identical shields (mirrors BlockingActuator).
 //
 //  We union the readable token Sets directly (rather than reconstruct a
 //  FamilyActivitySelection) and feed them straight to ManagedSettingsStore
 //  shields and DeviceActivityEvent — both take token sets.
 //
-//  Add target membership to BOTH Block and BlockMonitor targets.
+//  Add target membership to BOTH Tyri and TyriMonitor targets.
 //
 
 import Foundation

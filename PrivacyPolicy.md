@@ -2,11 +2,11 @@
 
 ## Overview
 
-Block is designed with privacy in mind. This app does not collect, transmit, or store your personal information on any external servers.
+Tyri is designed with privacy in mind. This app does not collect, transmit, or store your personal information on any external servers.
 
 ## Data Collection
 
-Block stores the following information locally on your device:
+Tyri stores the following information locally on your device:
 
 - **NFC Tag Identifier**: A unique identifier from your registered NFC tag, stored locally to recognize your tag when scanned
 - **App Selection**: Your selected apps to block, managed by iOS Screen Time APIs and stored locally by the system
@@ -16,14 +16,14 @@ All data is stored exclusively on your device using iOS UserDefaults and system-
 
 ## Permissions
 
-Block requires the following iOS permissions:
+Tyri requires the following iOS permissions:
 
 - **Screen Time Authorization**: Required to block apps using iOS Family Controls framework. This permission is managed entirely by iOS and can be revoked at any time in Settings.
 - **NFC Access**: Required to read NFC tags. NFC tag identifiers are only used locally to match your registered tag.
 
 ## Data Sharing
 
-Block does not share any data with third parties. All information remains on your device and is never transmitted over the network.
+Tyri does not share any data with third parties. All information remains on your device and is never transmitted over the network.
 
 ## Data Deletion
 

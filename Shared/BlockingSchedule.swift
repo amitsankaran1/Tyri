@@ -1,8 +1,8 @@
 //
 //  BlockingSchedule.swift
-//  Block
+//  Tyri
 //
-//  Add target membership to BOTH Block and BlockMonitor targets.
+//  Add target membership to BOTH Tyri and TyriMonitor targets.
 //
 
 import Foundation

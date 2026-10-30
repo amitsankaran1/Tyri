@@ -1,6 +1,6 @@
 //
 //  BlockRule.swift
-//  Block
+//  Tyri
 //
 //  A single blocking rule of one type (schedule, timer, or NFC tag) applied to
 //  one or more AppGroups. The effective shield is the union of the referenced
@@ -9,7 +9,7 @@
 //  Each block uses its own `ManagedSettingsStore(named: "block.<UUID>")` so
 //  blocks shield independently; iOS unions all stores' shields.
 //
-//  Add target membership to BOTH Block and BlockMonitor targets.
+//  Add target membership to BOTH Tyri and TyriMonitor targets.
 //
 
 import Foundation

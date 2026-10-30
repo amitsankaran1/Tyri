@@ -1,0 +1,11 @@
+Tyri 2.3: simplified native SwiftUI interface with Focus and Lists tabs and Settings in the toolbar.
+
+Please check:
+- Existing lists and blocking rules remain after updating.
+- Creating a list: Cancel discards the draft; Save persists it after reopening Tyri.
+- Active blocks retain their restrictions on removing saved selections.
+- Navigation, keyboard, and Settings on standard iPhone sizes.
+- On iPhone Duo, unfold, rotate, and fold while editing a list; the draft should remain intact.
+- On a physical iPhone, Screen Time permission, app/website shielding, schedules, usage limits, breaks, and cooldowns.
+
+NFC testing is deferred to Amit. Lost-tag recovery is outside this update.

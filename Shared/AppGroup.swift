@@ -1,12 +1,12 @@
 //
 //  AppGroup.swift
-//  Block
+//  Tyri
 //
 //  A named, reusable list of apps (e.g. "Social media", "Games"). Blocks
 //  reference groups by id; a block's effective shield is the union of its
 //  groups' selections (see BlockResolution).
 //
-//  Add target membership to BOTH Block and BlockMonitor targets.
+//  Add target membership to BOTH Tyri and TyriMonitor targets.
 //
 
 import Foundation

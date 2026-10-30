@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Quick Start
 
-**Block** is an iOS app that uses NFC tags as physical switches to toggle app blocking via iOS Screen Time APIs.
+**Tyri** is an iOS app that uses NFC tags as physical switches to toggle app blocking via iOS Screen Time APIs.
 
 **Prerequisites**: Xcode (full version, not just Command Line Tools), iPhone with NFC (iPhone 7+), iOS 15+
 
 **Essential workflow**:
-1. Open `Block.xcodeproj` in Xcode
+1. Open `Tyri.xcodeproj` in Xcode
 2. Build (Cmd+B) and Run (Cmd+R) on physical iPhone (NFC doesn't work on simulator)
 3. For development without NFC hardware: Use `NFCManager.shared.simulateTagScan(withId: "test123")` in code
 
-**Key files**: `BlockApp.swift` (entry point), three manager singletons in `Services/`, views in `Views/`, and Art Nouveau theme in `Views/ArtNouveauTheme.swift`
+**Key files**: `TyriApp.swift` (entry point), three manager singletons in `Services/`, views in `Views/`, and Art Nouveau theme in `Views/ArtNouveauTheme.swift`
 
 ---
 
@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an Xcode-based iOS project. **Full Xcode is required** (not just Command Line Tools).
 
-- **Build**: Open `Block.xcodeproj` in Xcode and use Cmd+B
+- **Build**: Open `Tyri.xcodeproj` in Xcode and use Cmd+B
 - **Run on Device**: Cmd+R (requires physical iPhone with NFC - iPhone 7+)
 - **Run on Simulator**: Works for UI testing only - NFC functionality requires physical device
 - **Clean**: Product → Clean Build Folder in Xcode

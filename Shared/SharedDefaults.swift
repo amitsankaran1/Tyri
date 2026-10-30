@@ -1,9 +1,9 @@
 //
 //  SharedDefaults.swift
-//  Block
+//  Tyri
 //
-//  Shared between the host app and the BlockMonitor extension via App Group.
-//  Add this file's target membership to BOTH the Block and BlockMonitor targets.
+//  Shared between the host app and the TyriMonitor extension via App Group.
+//  Add this file's target membership to BOTH the Tyri and TyriMonitor targets.
 //
 
 import Foundation
