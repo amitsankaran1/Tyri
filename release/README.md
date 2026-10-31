@@ -60,3 +60,9 @@ Use external tester groups for friends. Internal testers are members of your App
 Builds expire 90 days after upload; an expired build needs a fresh uploaded build to resume testing. Each future refresh should increment the build number, archive, upload, confirm processing, and assign the new build to the tester group.
 
 Apple references: [TestFlight overview](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/), [invite external testers](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/), [add internal testers](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers/).
+
+## Persistence candidate — 2.3 (6)
+
+The app and monitor Release archive compile successfully from `9084fb6`. This candidate hardens usage-lock callbacks, repairs live usage shields on foreground recovery, preserves manual blocks at expiry, binds early-release cooldowns to their activation, and registers break re-locking before lifting shields. See the [QA report](../docs/issues/2026-10-31-block-lifecycle-qa.md) and [candidate receipt](builds/2.3-6.json).
+
+**Not uploaded yet:** cloud signing export reports “No Accounts” because Xcode cannot access its saved developer account credentials. Unlock the login keychain / restore the account in Xcode, then retry export from `/tmp/Tyri-2.3-6-cloud.xcarchive` using the documented workflow. Verify the final app/monitor signatures, version 2.3 (6), Family Controls, App Group, and app NFC entitlements before upload. The original unsigned compilation archive is `/tmp/Tyri-2.3-6-final.xcarchive`. Temporary artifacts should be retained until signing/upload completes.

@@ -1,0 +1,27 @@
+{
+  "version": "2.3",
+  "build": "6",
+  "appStoreId": "6757515805",
+  "sourceCommit": "9084fb604754c84e924e289eb4035be17959dd2f",
+  "sourceTree": "bacd7acc0614f56f9edac10757ceb62efd8d57f3",
+  "archiveStatus": "Release app and monitor compiled successfully",
+  "archivePath": "/tmp/Tyri-2.3-6-final.xcarchive",
+  "cloudSigningInput": "/tmp/Tyri-2.3-6-cloud.xcarchive",
+  "uploadStatus": "Not uploaded: export failed because Xcode could not access the saved developer account credentials",
+  "signingError": "No Accounts; no iOS Distribution signing certificate",
+  "signingLog": "/tmp/tyri-2.3-6-signing.log",
+  "processingCompletionVerified": false,
+  "testerGroupAssignmentVerified": false,
+  "physicalScreenTimeTested": false,
+  "nfcTested": false,
+  "validation": {
+    "lifecycleChecksPassed": 12,
+    "calendarChecksPassed": 16,
+    "initialUITestsPassed": 5,
+    "finalUITestsStatus": "Passed",
+    "finalResultBundle": "/tmp/tyri-persistence-final.xcresult",
+    "finalUITestsPassed": 5,
+    "cooldownAssertionsPassed": 3
+  },
+  "notionPage": "https://www.notion.so/2e616e0e0e3a80148841ff8ca2cb3647"
+}
