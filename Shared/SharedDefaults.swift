@@ -38,6 +38,8 @@ enum SharedDefaults {
         /// block (see BlockingActuator). Chunk 0 is "block.<UUID>"; chunks 1+ are
         /// "block.<UUID>.apps.<i>". Missing key means at most the legacy chunk 0.
         static func shieldChunkCount(blockID: UUID) -> String { "shieldChunks.\(blockID.uuidString)" }
+        static func scheduleWindowStart(blockID: UUID) -> String { "scheduleWindowStart.\(blockID.uuidString)" }
+        static func scheduleReleasedUntil(blockID: UUID) -> String { "scheduleReleasedUntil.\(blockID.uuidString)" }
         static func running(blockID: UUID) -> String { "running.\(blockID.uuidString)" }
         /// `Date` when the current usage-limit lockout auto-expires. Presence of a
         /// future date is the source of truth for "this block is usage-locked".

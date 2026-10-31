@@ -37,7 +37,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         guard let (kind, blockID) = Self.parse(activity) else { return }
         switch kind {
         case .schedule:
-            BlockingActuator.start(blockID: blockID)
+            ScheduleEnforcement.reconcile(blockID: blockID)
         case .lock:
             // Lockout window began — ensure the shield is up (idempotent; the
             // threshold handler already applied it).
@@ -54,7 +54,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         guard let (kind, blockID) = Self.parse(activity) else { return }
         switch kind {
         case .schedule:
-            BlockingActuator.end(blockID: blockID)
+            ScheduleEnforcement.reconcile(blockID: blockID)
         case .lock:
             // Lockout elapsed — release the shield, clear the lock state, and
             // re-arm the usage budget from zero.

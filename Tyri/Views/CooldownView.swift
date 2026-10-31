@@ -13,8 +13,8 @@ struct CooldownView: View {
                 Section {
                     VStack(spacing: 12) {
                         Image(systemName: "hourglass").font(.largeTitle).foregroundStyle(.tint)
-                        Text("Disable \(block?.name ?? "block")?").font(.title2.bold())
-                        Text(cooldown.isComplete ? "You can now release this block." : "Your apps stay blocked while you wait.")
+                        Text("Stop \(block?.name ?? "block") early?").font(.title2.bold())
+                        Text(cooldown.isComplete ? "You can now stop this block." : "Your apps stay blocked while you wait.")
                             .foregroundStyle(.secondary)
                         Text(remainingTime).font(.system(.largeTitle, design: .rounded).bold()).monospacedDigit()
                     }
@@ -23,12 +23,12 @@ struct CooldownView: View {
                 }
                 Section {
                     Button { cooldown.complete(); isPresented = false } label: {
-                        Label("Release block", systemImage: "lock.open").frame(maxWidth: .infinity)
+                        Label("Stop blocking", systemImage: "lock.open").frame(maxWidth: .infinity)
                     }
                     .primaryActionButton().disabled(!cooldown.isComplete).listRowBackground(Color.clear)
-                } footer: { Text("Closing this screen cancels the cooldown. Your schedules and usage limits remain configured.") }
+                } footer: { Text("Closing this screen cancels the wait and keeps blocking on. Stopping this block leaves your future schedules and usage limits in place. Other active blocks still apply.") }
             }
-            .navigationTitle("Cooldown").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Stop early").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { cooldown.cancel(); isPresented = false }

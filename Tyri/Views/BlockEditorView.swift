@@ -93,6 +93,7 @@ struct BlockEditorView: View {
             }
 
             typeConfigSection
+            flexibilitySection
 
             if isActive {
                 Section {
@@ -105,7 +106,7 @@ struct BlockEditorView: View {
                         Button { showCooldown = true } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "hourglass")
-                                Text("Disable now (cooldown)")
+                                Text("Stop early…")
                             }
                             .foregroundColor(Color.orange)
                         }
@@ -152,7 +153,7 @@ struct BlockEditorView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(storedCooldownMinutes == 0
-                 ? "This block can't be deleted while it's active, and it's set to “No early disable” — wait for it to end first."
+                 ? "This block can't be deleted while it's active, and it's set to “Stop early: Not allowed” — wait for it to end first."
                  : "Disable the block first (its cooldown applies), then delete it.")
         }
         .onAppear {
@@ -175,47 +176,58 @@ struct BlockEditorView: View {
                 } label: {
                     HStack {
                         Image(systemName: "clock").foregroundColor(Color.accentColor)
-                        Text(schedule?.summary ?? "No schedule").foregroundColor(Color.primary)
+                        Text(schedule?.summary ?? "Set schedule").foregroundColor(Color.primary)
                     }
                 }
+                .accessibilityIdentifier("edit-schedule")
                 .disabled(isActive)
                 .opacity(isActive ? 0.5 : 1)
-                cooldownPicker
-                breakPicker
             }
         case .timer:
             Section("Usage limit") {
                 durationPicker("Daily time limit", selection: $usageLimitMinutes, options: Self.usageLimitOptions)
-                durationPicker("Lockout duration", selection: $usageLockMinutes, options: Self.usageLockOptions)
-                cooldownPicker
+                durationPicker("Then block apps for", selection: $usageLockMinutes, options: Self.usageLockOptions)
             }
         case .tag:
             Section("Tag") {
                 Text("Tapping your registered tag toggles this block on or off, together with your other Tag blocks.")
                     .font(.system(.caption, design: .default))
                     .foregroundColor(Color.secondary)
-                cooldownPicker
-                breakPicker
             }
         }
     }
 
 
-    private var cooldownPicker: some View {
-        Picker("Early disable", selection: $cooldownMinutes) {
-            ForEach(Self.cooldownOptions, id: \.self) { minutes in
-                Text(minutes == 0 ? "Not allowed" : "\(minutes) min cooldown").tag(minutes)
+    private var flexibilitySection: some View {
+        Section {
+            Picker("Stop early", selection: $cooldownMinutes) {
+                ForEach(Self.cooldownOptions, id: \.self) { minutes in
+                    Text(minutes == 0 ? "Not allowed" : "Wait \(Self.minutesLabel(minutes))").tag(minutes)
+                }
             }
-        }
-        .disabled(isActive)
-    }
-    private var breakPicker: some View {
-        Picker("Break length", selection: $breakMinutes) {
-            ForEach(Self.breakOptions, id: \.self) { minutes in
-                Text(minutes == 0 ? "No breaks" : "\(minutes) min").tag(minutes)
+            .disabled(isActive)
+            Text(cooldownMinutes == 0
+                 ? (type == .tag ? "Use your NFC tag to stop blocking. You can't stop it early here."
+                    : "Apps stay blocked until this block ends. You can't stop it early here.")
+                 : "To stop blocking early, first wait \(Self.minutesLabel(cooldownMinutes)). Your apps stay blocked while you wait.")
+                .font(.footnote).foregroundStyle(.secondary)
+            if type != .timer {
+                Picker("Take a break", selection: $breakMinutes) {
+                    ForEach(Self.breakOptions, id: \.self) { minutes in
+                        Text(minutes == 0 ? "Not allowed" : "\(Self.minutesLabel(minutes))").tag(minutes)
+                    }
+                }
+                .disabled(isActive)
+                Text(breakMinutes == 0
+                     ? "No temporary pauses during this block."
+                     : "Pause this block once for \(Self.minutesLabel(breakMinutes)) each \(type == .tag ? "tag session" : "scheduled session"). Blocking resumes automatically. Other active blocks still apply.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
+        } header: {
+            Text("When you need access")
+        } footer: {
+            Text("These choices can't be changed while the block is active.")
         }
-        .disabled(isActive)
     }
 
     /// "Take a break" affordance while the block is active. Timer blocks never
@@ -279,8 +291,8 @@ struct BlockEditorView: View {
 
     private var noCooldownExplainer: String {
         storedBlock?.type == .tag
-            ? "This block is set to “No early disable” — it can't be turned off here. Tap your tag to toggle it off."
-            : "This block is set to “No early disable” — it can't be turned off until its schedule window or lockout ends."
+            ? "This block is set to “Stop early: Not allowed” — it can't be turned off here. Tap your tag to toggle it off."
+            : "This block is set to “Stop early: Not allowed” — it can't be turned off until its schedule window or lockout ends."
     }
 
     nonisolated static func minutesLabel(_ m: Int) -> String {
@@ -297,7 +309,7 @@ struct BlockEditorView: View {
         name = block.name
         type = block.type
         groupIDs = Set(block.appGroupIDs)
-        schedule = block.schedule
+        schedule = block.schedule ?? (newBlock != nil && block.type == .schedule ? BlockingSchedule() : nil)
         cooldownMinutes = Self.cooldownOptions.min(by: { abs($0 - block.cooldownMinutes) < abs($1 - block.cooldownMinutes) }) ?? block.cooldownMinutes
         breakMinutes = Self.breakOptions.min(by: { abs($0 - block.breakMinutes) < abs($1 - block.breakMinutes) }) ?? block.breakMinutes
         if let l = block.usageLimitMinutes {

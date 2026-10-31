@@ -4,6 +4,10 @@ Project reference and review screenshots: [Tyri in Notion](https://app.notion.co
 
 Version **2.3 (3)** uploaded successfully on October 29, 2026. Apple reported that the package was processing; processing completion and tester-group assignment have not been verified. The [upload receipt](builds/2.3-3.json) records the archived source revision, package hash, and verified distribution entitlements.
 
+Version **2.3 (4)** uploaded successfully on October 30, 2026 as a candidate fix for scheduled blocks failing to shield selected apps. Apple reported processing. Physical-device enforcement, processing completion, and tester-group availability are not yet verified. See the [issue report](../docs/issues/2026-10-30-overnight-schedule.md) and [release receipt](builds/2.3-4.json). Source revision: `5460c75`.
+
+Version **2.3 (5)** uploaded successfully on October 30, 2026. This combined candidate includes build 4's schedule recovery plus simpler scheduling, Schedule-first creation, and clearer Stop early / Take a break settings. Source: `b32f561`. Apple reported processing; physical shielding and tester availability remain unverified. Four UI scenarios passed across the full run and the corrected focused scheduling rerun. [Release receipt](builds/2.3-5.json) · [UX changes](../docs/issues/2026-10-30-scheduling-ux.md). The Tyri Notion page includes four latest screenshots and preserves 21 previous images under a versioned toggle.
+
 ## Prepare and upload
 
 1. Sign into the existing developer account in Xcode → Settings → Apple Accounts. Unlock the Mac's login keychain and approve signing prompts locally. Do not put passwords or verification codes in shell arguments or project files.

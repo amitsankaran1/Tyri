@@ -10,6 +10,7 @@
 
 import Foundation
 import FamilyControls
+import ManagedSettings
 
 @MainActor
 enum TestHarness {
@@ -42,7 +43,7 @@ enum TestHarness {
         let work = BlockStore.shared.create(name: "Work focus", type: .schedule)
         if var b = BlockStore.shared.block(id: work.id) {
             b.appGroupIDs = [social.id]
-            b.schedule = BlockingSchedule(startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, weekdays: [2,3,4,5,6])
+            b.schedule = BlockingSchedule(startHour: 0, startMinute: 0, endHour: 0, endMinute: 0, weekdays: Set(1...7))
             b.cooldownMinutes = 5
             BlockStore.shared.update(b)
         }
@@ -76,9 +77,55 @@ enum TestHarness {
         print("🌱 Seeded demo state: 2 groups, 3 blocks (1 scheduled + 1 usage-locked), tag registered")
     }
 
+    /// Exercise actual shared-state recovery, independent of extension delivery.
+    private static func runScheduleRegressionChecks() {
+        var block = BlockRule(name: "Schedule regression", type: .schedule)
+        block.schedule = BlockingSchedule(startHour: 0, endHour: 0, weekdays: Set(1...7))
+        let id = block.id
+        let suite = SharedDefaults.suite
+        BlockStore.shared.insert(block)
+        defer {
+            BlockingActuator.end(blockID: id)
+            suite.removeObject(forKey: SharedDefaults.Keys.scheduleWindowStart(blockID: id))
+            suite.removeObject(forKey: SharedDefaults.Keys.scheduleReleasedUntil(blockID: id))
+            BlockStore.shared.delete(id: id)
+            BlockStore.shared.flush()
+        }
+        let now = Date()
+        let window = block.schedule!.activeWindow(at: now)!
+        ScheduleEnforcement.reconcile(blockID: id, now: now)
+        precondition(suite.bool(forKey: SharedDefaults.Keys.running(blockID: id)), "Missing callback must recover")
+        // A repeated callback / foreground refresh must preserve an active break.
+        let breakEnd = now.addingTimeInterval(300)
+        suite.set(breakEnd, forKey: SharedDefaults.Keys.breakEnd(blockID: id))
+        suite.set(true, forKey: SharedDefaults.Keys.breakUsed(blockID: id))
+        ScheduleEnforcement.reconcile(blockID: id, now: now)
+        precondition(BreakMonitoring.breakEnd(blockID: id) == breakEnd, "Refresh shortened break")
+        precondition(BreakMonitoring.breakUsed(blockID: id), "Refresh reset allowance")
+        // Simulate a lost running flag on relaunch, with window identity preserved.
+        suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: id))
+        ScheduleEnforcement.reconcile(blockID: id, now: now)
+        precondition(suite.bool(forKey: SharedDefaults.Keys.running(blockID: id)))
+        precondition(BreakMonitoring.breakEnd(blockID: id) == breakEnd)
+        ScheduleEnforcement.releaseCurrentWindow(block: block, now: now)
+        ScheduleEnforcement.reconcile(blockID: id, now: now)
+        ScheduleEnforcement.reconcile(blockID: id, now: now)
+        precondition(!suite.bool(forKey: SharedDefaults.Keys.running(blockID: id)), "Early release must survive refresh")
+        ScheduleEnforcement.reconcile(blockID: id, now: window.end.addingTimeInterval(1))
+        precondition(suite.bool(forKey: SharedDefaults.Keys.running(blockID: id)), "Next window must re-arm")
+        precondition(!BreakMonitoring.breakUsed(blockID: id), "Next window gets a fresh break")
+        block.schedule = nil
+        BlockStore.shared.update(block)
+        BlockStore.shared.flush()
+        ScheduleEnforcement.reconcile(blockID: id)
+        precondition(!suite.bool(forKey: SharedDefaults.Keys.running(blockID: id)), "Removed schedule must clear")
+        print("✅ Schedule regression: missing callback, relaunch, break, release, next window, removal passed")
+    }
+
     /// Light launch smoke check: verify the stores round-trip and resolution works.
     static func runIfEnabled() {
         guard isEnabled else { return }
+        runScheduleRegressionChecks()
         let g = AppGroupStore.shared.create(name: "Harness group")
         let b = BlockStore.shared.create(name: "Harness block", type: .schedule)
         var bb = BlockStore.shared.block(id: b.id)!

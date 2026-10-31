@@ -14,7 +14,7 @@ struct BreakView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "cup.and.saucer").font(.largeTitle).foregroundStyle(.tint)
                         Text(block?.name ?? "Break").font(.title2.bold())
-                        Text("Your apps are unlocked for this break.").foregroundStyle(.secondary)
+                        Text("This block is paused. Other active blocks still apply.").foregroundStyle(.secondary)
                         Text(remainingTime).font(.system(.largeTitle, design: .rounded).bold()).monospacedDigit()
                     }
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(.vertical, 20)

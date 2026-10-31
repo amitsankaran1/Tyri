@@ -1,0 +1,76 @@
+{
+  "version": "2.3",
+  "build": "5",
+  "appStoreId": "6757515805",
+  "verifiedExportSHA256": "4923e91472a095551f3243fa8888d99057fe81a3020ff0748ccb905e51c18384",
+  "signing": "Cloud Managed Apple Distribution",
+  "uploadStatus": "Upload succeeded; Apple reported uploaded package is processing",
+  "processingCompletionVerified": false,
+  "testerGroupAssignmentVerified": false,
+  "physicalScreenTimeTested": false,
+  "nfcTested": false,
+  "products": [
+    {
+      "product": "Tyri.app",
+      "version": "2.3 (5)",
+      "identifier": "name.amitsankaran.Block",
+      "signatureVerified": true,
+      "profileEntitlements": {
+        "beta-reports-active": true,
+        "com.apple.developer.nfc.readersession.formats": [
+          "NDEF",
+          "TAG",
+          "PACE"
+        ],
+        "com.apple.security.application-groups": [
+          "group.com.amitsankaran.Block"
+        ],
+        "application-identifier": "DAG83US2FV.name.amitsankaran.Block",
+        "com.apple.developer.family-controls": true,
+        "keychain-access-groups": [
+          "DAG83US2FV.*",
+          "com.apple.token"
+        ],
+        "get-task-allow": false,
+        "com.apple.developer.team-identifier": "DAG83US2FV"
+      },
+      "profileExpiration": "2027-10-10 06:50:53"
+    },
+    {
+      "product": "TyriMonitor.appex",
+      "version": "2.3 (5)",
+      "identifier": "name.amitsankaran.Block.BlockMonitor",
+      "signatureVerified": true,
+      "profileEntitlements": {
+        "beta-reports-active": true,
+        "com.apple.security.application-groups": [
+          "group.com.amitsankaran.Block"
+        ],
+        "application-identifier": "DAG83US2FV.name.amitsankaran.Block.BlockMonitor",
+        "com.apple.developer.family-controls": true,
+        "keychain-access-groups": [
+          "DAG83US2FV.*",
+          "com.apple.token"
+        ],
+        "get-task-allow": false,
+        "com.apple.developer.team-identifier": "DAG83US2FV"
+      },
+      "profileExpiration": "2027-10-10 06:50:53"
+    }
+  ],
+  "sourceCommit": "b32f561809f60f930c01991fa4d473b8150ec9cb",
+  "validation": {
+    "calendarChecksPassed": 16,
+    "existingUITestsPassed": 3,
+    "newSchedulingUITestsPassed": 1,
+    "simulator": "iPhone 17 Pro / iOS 26.2",
+    "existingTestsResult": "/tmp/tyri-ux-tests.xcresult",
+    "schedulingTestsResult": "/tmp/tyri-ux-verified-tests.xcresult",
+    "notes": "Three existing cases passed in the full run. The new case passed in a focused rerun after test-only navigation/locator corrections; production source was unchanged."
+  },
+  "notionPage": "https://app.notion.com/p/2e616e0e0e3a80148841ff8ca2cb3647",
+  "screenshotsAdded": 4,
+  "previousScreenshotsArchived": 21,
+  "uploadLog": "/tmp/tyri-2.3-5-upload.log",
+  "issueResolutionStatus": "Combined UX update and schedule recovery candidate; physical app shielding remains unverified"
+}

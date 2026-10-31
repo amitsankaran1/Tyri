@@ -99,6 +99,9 @@ class CooldownManager: ObservableObject {
         let wasUsageLocked = (defaults.object(
             forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date).map { $0 > Date() } ?? false
 
+        if let block = BlockStore.shared.block(id: blockID) {
+            ScheduleEnforcement.releaseCurrentWindow(block: block)
+        }
         // Clear the named store and the running flag.
         ScreenTimeManager.shared.clearBlockShield(id: blockID)
         defaults.removeObject(forKey: SharedDefaults.Keys.running(blockID: blockID))

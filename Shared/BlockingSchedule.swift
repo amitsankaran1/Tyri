@@ -6,7 +6,7 @@
 //
 
 import Foundation
-#if canImport(DeviceActivity)
+#if canImport(DeviceActivity) && os(iOS)
 import DeviceActivity
 #endif
 
@@ -44,6 +44,22 @@ struct BlockingSchedule: Codable, Equatable, Hashable {
     /// True when the schedule wraps past midnight (end is on or before start).
     var crossesMidnight: Bool { endMinutesFromMidnight <= startMinutesFromMidnight }
 
+    /// The selected weekday is the day the window STARTS, including after midnight.
+    /// End is exclusive. Calendar arithmetic preserves local wall times across DST.
+    func activeWindow(at now: Date = Date(), calendar: Calendar = .current) -> DateInterval? {
+        let today = calendar.startOfDay(for: now)
+        for offset in [0, -1] {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today),
+                  weekdays.contains(calendar.component(.weekday, from: day)),
+                  let start = calendar.date(bySettingHour: startHour, minute: startMinute, second: 0, of: day),
+                  let endDay = calendar.date(byAdding: .day, value: crossesMidnight ? 1 : 0, to: day),
+                  let end = calendar.date(bySettingHour: endHour, minute: endMinute, second: 0, of: endDay),
+                  start <= now, now < end else { continue }
+            return DateInterval(start: start, end: end)
+        }
+        return nil
+    }
+
     /// Short human label like "Mon–Fri 9:00–17:00".
     var summary: String {
         let timeFormatter = DateFormatter()
@@ -66,10 +82,8 @@ struct BlockingSchedule: Codable, Equatable, Hashable {
         }.joined(separator: " ")
     }
 
-#if canImport(DeviceActivity)
-    /// Builds a single `DeviceActivitySchedule`. For schedules that cross midnight,
-    /// the caller should register two separate activity names with different schedules
-    /// (see `SchedulingManager`).
+#if canImport(DeviceActivity) && os(iOS)
+    /// A single interval also spans midnight; legacy segment names are cleanup-only.
     func deviceActivitySchedule(crossingSegment: CrossingSegment = .full) -> DeviceActivitySchedule {
         switch crossingSegment {
         case .full:
