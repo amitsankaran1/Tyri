@@ -11,6 +11,7 @@
 import Foundation
 import FamilyControls
 import ManagedSettings
+import DeviceActivity
 
 @MainActor
 enum TestHarness {
@@ -125,6 +126,9 @@ enum TestHarness {
     /// Light launch smoke check: verify the stores round-trip and resolution works.
     static func runIfEnabled() {
         guard isEnabled else { return }
+        if ProcessInfo.processInfo.environment["TYRI_QA_LIFECYCLE"] == "1" {
+            runLifecycleDiagnostics()
+        }
         runScheduleRegressionChecks()
         let g = AppGroupStore.shared.create(name: "Harness group")
         let b = BlockStore.shared.create(name: "Harness block", type: .schedule)
@@ -144,6 +148,65 @@ enum TestHarness {
         AppGroupStore.shared.flush()
 
         print(ok ? "✅ TestHarness: store round-trip + resolution OK" : "❌ TestHarness: round-trip FAILED")
+    }
+
+    /// Opt-in QA probes: real managers and persisted state, with a typed website
+    /// so no synthetic/private application tokens are needed. Not an OS shield test.
+    private static func runLifecycleDiagnostics() {
+        var observations: [String] = []
+        func record(_ message: String) { observations.append(message); print(message) }
+        defer {
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("lifecycle-qa.txt")
+            try? observations.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        }
+        let group = AppGroup(name: "QA website", blockedWebDomains: ["example.com"])
+        AppGroupStore.shared.insert(group)
+        var block = BlockRule(name: "QA lifecycle", type: .timer)
+        block.appGroupIDs = [group.id]
+        block.isEnabled = true
+        BlockStore.shared.insert(block)
+        let suite = SharedDefaults.suite
+        let store = ManagedSettingsStore(named: BlockingActuator.appsStoreName(for: block.id, chunk: 0))
+        defer {
+            CooldownManager.shared.cancel()
+            BreakMonitoring.resetAllowance(blockID: block.id)
+            UsageMonitoring.stopLockout(for: block.id)
+            BlockingActuator.clearShields(blockID: block.id)
+            BlockStore.shared.delete(id: block.id)
+            AppGroupStore.shared.delete(id: group.id)
+            BlockStore.shared.flush()
+            AppGroupStore.shared.flush()
+        }
+        BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: [group]), blockID: block.id)
+        record("QA baseline website setting present: \(store.webContent.blockedByFilter != nil)")
+        suite.set(Date().addingTimeInterval(-1), forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id))
+        UsageLimitManager.shared.reconcileExpiredLocks()
+        record("QA manual-after-usage-expiry: enabled=\(BlockStore.shared.block(id: block.id)!.isEnabled), websiteSettingPresent=\(store.webContent.blockedByFilter != nil)")
+
+        block.type = .schedule
+        block.isEnabled = false
+        block.schedule = BlockingSchedule(startHour: 0, endHour: 0, weekdays: Set(1...7))
+        BlockStore.shared.update(block)
+        BlockStore.shared.flush()
+        ScheduleEnforcement.reconcile(block: block)
+        record("QA new schedule before stale cooldown: running=\(suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id)))")
+        suite.set(Date().addingTimeInterval(-86400), forKey: SharedDefaults.Keys.cooldownEnd(blockID: block.id))
+        CooldownManager.shared.restoreActiveCooldownsIfAny()
+        record("QA new schedule after stale cooldown: running=\(suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id))), releasedUntil=\(String(describing: suite.object(forKey: SharedDefaults.Keys.scheduleReleasedUntil(blockID: block.id))))")
+        precondition(suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id)), "Old cooldown released a new activation")
+        CooldownManager.shared.start(for: block.id, minutes: 1)
+        suite.set(Date().addingTimeInterval(-1), forKey: SharedDefaults.Keys.cooldownEnd(blockID: block.id))
+        CooldownManager.shared.restoreActiveCooldownsIfAny()
+        precondition(suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id)), "Reopening released block without explicit confirmation")
+        CooldownManager.shared.complete()
+        precondition(!suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id)), "Valid completed cooldown must allow explicit release")
+        record("QA cooldown assertions passed: stale activation, relaunch, explicit release")
+        suite.removeObject(forKey: SharedDefaults.Keys.scheduleReleasedUntil(blockID: block.id))
+        ScheduleEnforcement.reconcile(block: block)
+        BreakMonitoring.startBreak(blockID: block.id, minutes: 5)
+        let registered = DeviceActivityCenter().schedule(for: BreakMonitoring.breakActivityName(for: block.id))
+        record("QA five-minute break: end=\(String(describing: BreakMonitoring.breakEnd(blockID: block.id))), registeredEnd=\(String(describing: registered?.intervalEnd))")
+        suite.removeObject(forKey: SharedDefaults.Keys.scheduleWindowStart(blockID: block.id))
     }
 }
 

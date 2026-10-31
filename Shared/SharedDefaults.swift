@@ -33,6 +33,8 @@ enum SharedDefaults {
         static let registeredTag = "registeredTagIdentifier"
         static let blockingEnabled = "isBlockingEnabled"
 
+        static func cooldownActivation(blockID: UUID) -> String { "cooldownActivation.\(blockID.uuidString)" }
+        static func manualActivation(blockID: UUID) -> String { "manualActivation.\(blockID.uuidString)" }
         static func cooldownEnd(blockID: UUID) -> String { "cooldown.\(blockID.uuidString)" }
         /// Number of chunked app/webDomain shield stores currently written for a
         /// block (see BlockingActuator). Chunk 0 is "block.<UUID>"; chunks 1+ are
