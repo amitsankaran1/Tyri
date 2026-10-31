@@ -7,9 +7,8 @@
   "archiveStatus": "Release app and monitor compiled successfully",
   "archivePath": "/tmp/Tyri-2.3-6-final.xcarchive",
   "cloudSigningInput": "/tmp/Tyri-2.3-6-cloud.xcarchive",
-  "uploadStatus": "Not uploaded: export failed because Xcode could not access the saved developer account credentials",
-  "signingError": "No Accounts; no iOS Distribution signing certificate",
-  "signingLog": "/tmp/tyri-2.3-6-signing.log",
+  "uploadStatus": "Upload succeeded; Apple reported uploaded package is processing",
+  "signingLog": "/tmp/tyri-2.3-6-signing-retry.log",
   "processingCompletionVerified": false,
   "testerGroupAssignmentVerified": false,
   "physicalScreenTimeTested": false,
@@ -23,5 +22,33 @@
     "finalUITestsPassed": 5,
     "cooldownAssertionsPassed": 3
   },
-  "notionPage": "https://www.notion.so/2e616e0e0e3a80148841ff8ca2cb3647"
+  "notionPage": "https://www.notion.so/2e616e0e0e3a80148841ff8ca2cb3647",
+  "verifiedExportSHA256": "eca83b539a2f0e50ba30379ccd01a7b211a6e167411379fed3e57ddc9dab4bb6",
+  "signing": "Cloud Managed Apple Distribution",
+  "products": [
+    {
+      "product": "Tyri.app",
+      "identifier": "name.amitsankaran.Block",
+      "version": "2.3 (6)",
+      "signatureVerified": true,
+      "profileExpiration": "2027-10-10 06:50:53",
+      "familyControls": true,
+      "appGroupVerified": true,
+      "nfcVerified": true
+    },
+    {
+      "product": "TyriMonitor.appex",
+      "identifier": "name.amitsankaran.Block.BlockMonitor",
+      "version": "2.3 (6)",
+      "signatureVerified": true,
+      "profileExpiration": "2027-10-10 06:50:53",
+      "familyControls": true,
+      "appGroupVerified": true,
+      "nfcVerified": false
+    }
+  ],
+  "uploadedAt": "2026-10-31T18:20:53Z",
+  "uploadLog": "/tmp/tyri-2.3-6-upload.log",
+  "previousSigningBlocker": "Resolved after unlocking the login keychain",
+  "testerAvailabilityNote": "Not verified: App Store Connect browser requires sign-in"
 }
