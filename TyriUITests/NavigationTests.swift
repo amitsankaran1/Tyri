@@ -94,4 +94,62 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Screen Time"].waitForExistence(timeout: 5))
         capture("06-settings-compact")
     }
+    func testSchedulePresetsAndPlainLanguageSettings() throws {
+        app.buttons["Add block"].tap()
+        let scheduleOption = app.buttons["Schedule"].firstMatch
+        XCTAssertTrue(scheduleOption.waitForExistence(timeout: 5))
+        let usageOption = app.buttons["Usage limit"].firstMatch
+        let tagOption = app.buttons["NFC tag"].firstMatch
+        XCTAssertLessThan(scheduleOption.frame.minY, usageOption.frame.minY)
+        XCTAssertLessThan(usageOption.frame.minY, tagOption.frame.minY)
+        capture("07-create-block-order")
+        scheduleOption.tap()
+        XCTAssertTrue(app.textFields["Block name"].waitForExistence(timeout: 5))
+        let social = app.switches["Social media"]
+        social.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(social.value as? String, "1")
+        let editSchedule = app.buttons["edit-schedule"]
+        XCTAssertTrue(editSchedule.waitForExistence(timeout: 5))
+        editSchedule.tap()
+        XCTAssertTrue(app.buttons["Every day"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.switches["Enable Schedule"].exists)
+        app.buttons["Weekends"].tap()
+        XCTAssertEqual(app.buttons["schedule-day-1"].value as? String, "Selected")
+        XCTAssertEqual(app.buttons["schedule-day-2"].value as? String, "Not selected")
+        app.buttons["schedule-day-2"].tap()
+        XCTAssertEqual(app.buttons["schedule-day-2"].value as? String, "Selected")
+        capture("08-schedule-custom-days")
+        app.buttons["Every day"].tap()
+        for day in 1...7 { app.buttons["schedule-day-\(day)"].tap() }
+        XCTAssertFalse(app.buttons["Done"].isEnabled)
+        app.buttons["Weekdays"].tap()
+        capture("09-schedule-weekdays")
+        app.buttons["Weekends"].tap()
+        app.buttons["Done"].tap()
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["When you need access"].exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Stop early,")).firstMatch.exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Take a break,")).firstMatch.exists)
+        XCTAssertFalse(app.buttons["Early disable"].exists)
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Take a break,")).firstMatch.tap()
+        app.buttons["5 min"].tap()
+        capture("10-access-settings")
+        app.swipeDown()
+        app.swipeDown()
+        app.textFields["Block name"].tap()
+        app.textFields["Block name"].typeText("Evening focus")
+        XCTAssertTrue(app.buttons["Save"].isEnabled)
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Evening focus"].waitForExistence(timeout: 5))
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "BLOCK_SEED_DEMO_STATE")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Evening focus"].waitForExistence(timeout: 5))
+        app.staticTexts["Evening focus"].tap()
+        XCTAssertTrue(app.buttons["edit-schedule"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["edit-schedule"].label.contains("Weekends"))
+        app.swipeUp()
+        XCTAssertTrue(app.buttons["Take a break, 5 min"].exists)
+    }
+
 }

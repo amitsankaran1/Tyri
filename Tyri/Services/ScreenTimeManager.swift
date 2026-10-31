@@ -104,6 +104,7 @@ class ScreenTimeManager: ObservableObject {
     /// state. Scheduled/timer blocks may re-apply at their next interval.
     func disableAllBlocks() {
         for block in BlockStore.shared.blocks {
+            ScheduleEnforcement.releaseCurrentWindow(block: block)
             clearBlockShield(id: block.id)
             UsageMonitoring.stopLockout(for: block.id)
             SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: block.id))

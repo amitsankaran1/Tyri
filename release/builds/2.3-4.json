@@ -1,0 +1,69 @@
+{
+  "version": "2.3",
+  "build": "4",
+  "appStoreId": "6757515805",
+  "verifiedExportSHA256": "29124de1a9954a2b3ed16b8f2e79660bc81f59accf92613723d5b68a9de846ad",
+  "signing": "Cloud Managed Apple Distribution",
+  "uploadStatus": "Upload succeeded; Apple reported uploaded package is processing",
+  "processingCompletionVerified": false,
+  "testerGroupAssignmentVerified": false,
+  "physicalScreenTimeTested": false,
+  "nfcTested": false,
+  "validation": {
+    "calendarChecksPassed": 16,
+    "uiTestsPassed": 3,
+    "simulator": "iPhone 17 Pro / iOS 26.2"
+  },
+  "products": [
+    {
+      "product": "Tyri.app",
+      "version": "2.3 (4)",
+      "identifier": "name.amitsankaran.Block",
+      "signatureVerified": true,
+      "profileEntitlements": {
+        "beta-reports-active": true,
+        "com.apple.developer.nfc.readersession.formats": [
+          "NDEF",
+          "TAG",
+          "PACE"
+        ],
+        "com.apple.security.application-groups": [
+          "group.com.amitsankaran.Block"
+        ],
+        "application-identifier": "DAG83US2FV.name.amitsankaran.Block",
+        "com.apple.developer.family-controls": true,
+        "keychain-access-groups": [
+          "DAG83US2FV.*",
+          "com.apple.token"
+        ],
+        "get-task-allow": false,
+        "com.apple.developer.team-identifier": "DAG83US2FV"
+      },
+      "profileExpiration": "2027-10-10 06:50:53"
+    },
+    {
+      "product": "TyriMonitor.appex",
+      "version": "2.3 (4)",
+      "identifier": "name.amitsankaran.Block.BlockMonitor",
+      "signatureVerified": true,
+      "profileEntitlements": {
+        "beta-reports-active": true,
+        "com.apple.security.application-groups": [
+          "group.com.amitsankaran.Block"
+        ],
+        "application-identifier": "DAG83US2FV.name.amitsankaran.Block.BlockMonitor",
+        "com.apple.developer.family-controls": true,
+        "keychain-access-groups": [
+          "DAG83US2FV.*",
+          "com.apple.token"
+        ],
+        "get-task-allow": false,
+        "com.apple.developer.team-identifier": "DAG83US2FV"
+      },
+      "profileExpiration": "2027-10-10 06:50:53"
+    }
+  ],
+  "sourceCommit": "5460c753c215f857e079ea85a330e0c524cf086c",
+  "uploadLog": "/tmp/tyri-2.3-4-upload.log",
+  "issueResolutionStatus": "Candidate fix; actual app shielding on the reporting physical iPhone remains unverified"
+}

@@ -1,11 +1,19 @@
-Tyri 2.3: simplified native SwiftUI interface with Focus and Lists tabs and Settings in the toolbar.
+Tyri 2.3 (5): easier scheduling and clearer access settings, plus recovery of overnight scheduled blocking.
 
-Please check:
-- Existing lists and blocking rules remain after updating.
-- Creating a list: Cancel discards the draft; Save persists it after reopening Tyri.
-- Active blocks retain their restrictions on removing saved selections.
-- Navigation, keyboard, and Settings on standard iPhone sizes.
-- On iPhone Duo, unfold, rotate, and fold while editing a list; the draft should remain intact.
-- On a physical iPhone, Screen Time permission, app/website shielding, schedules, usage limits, breaks, and cooldowns.
+New interface:
+- Create block lists Schedule first, Usage limit second, and NFC tag third.
+- Schedule: choose start/end times, use Every day/Weekdays/Weekends shortcuts, or tap individual days. Overnight schedules explain that they end the next day.
+- Stop early: choose whether to allow it and how long to wait before stopping.
+- Take a break: choose whether to allow a temporary pause and its length. Blocking resumes automatically; other active blocks still apply.
+- Check custom days and saved settings after reopening the app.
 
-NFC testing is deferred to Amit. Lost-tag recovery is outside this update.
+Please check on a physical iPhone:
+- Update without deleting the app; saved lists and rules should remain.
+- During a daily 20:00–10:00 schedule, open Tyri and confirm the rule is active and selected apps (including Instagram) show a shield.
+- Force-quit and reopen Tyri during that window; blocking should remain active.
+- A Friday overnight schedule should continue into Saturday morning, ending at its configured time.
+- Reopening during a break must not shorten the break or grant another one.
+- After an early-disable cooldown or emergency release, reopening must preserve release until the next schedule window.
+- With Tyri closed, check automatic start/end on device.
+
+Automated validation: 16 calendar regression checks and UI tests cover persistence, active restrictions, scheduling controls, and block creation order. Physical Screen Time/NFC behavior has not been verified in this session.

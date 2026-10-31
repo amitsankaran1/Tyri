@@ -71,7 +71,7 @@ struct HomeView: View {
                             }
                         }
                         if blockStore.blocks.isEmpty {
-                            Button { newBlock = BlockRule(name: "", type: .tag) } label: {
+                            Button { newBlock = BlockRule(name: "", type: .schedule) } label: {
                                 Label("Create your first block", systemImage: "plus")
                             }
                         }
@@ -96,7 +96,7 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        ForEach([BlockType.tag, .schedule, .timer], id: \.self) { type in
+                        ForEach([BlockType.schedule, .timer, .tag], id: \.self) { type in
                             Button { newBlock = BlockRule(name: "", type: type) } label: {
                                 Label(BlockTypeStyle.title(type), systemImage: BlockTypeStyle.icon(type))
                             }

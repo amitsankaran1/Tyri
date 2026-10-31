@@ -41,27 +41,21 @@ class SchedulingManager: ObservableObject {
     /// Register or update monitoring for a block's schedule.
     /// No-op (after teardown) when the block isn't a `.schedule` type or has no schedule.
     func applySchedule(for block: BlockRule) {
-        // Always stop any prior monitoring first to avoid stacking.
-        removeSchedule(for: block)
+        defer { ScheduleEnforcement.reconcile(block: block) }
+        // Remove old split monitors without clearing this window's state/break.
+        center.stopMonitoring([
+            Self.activityName(for: block.id, segment: .early),
+            Self.activityName(for: block.id, segment: .late)
+        ])
 
-        guard block.type == .schedule, let schedule = block.schedule else { return }
+        guard block.type == .schedule, let schedule = block.schedule else {
+            removeSchedule(for: block)
+            return
+        }
 
         do {
-            if schedule.crossesMidnight {
-                try center.startMonitoring(
-                    Self.activityName(for: block.id, segment: .early),
-                    during: schedule.deviceActivitySchedule(crossingSegment: .early)
-                )
-                try center.startMonitoring(
-                    Self.activityName(for: block.id, segment: .late),
-                    during: schedule.deviceActivitySchedule(crossingSegment: .late)
-                )
-            } else {
-                try center.startMonitoring(
-                    Self.activityName(for: block.id, segment: .full),
-                    during: schedule.deviceActivitySchedule(crossingSegment: .full)
-                )
-            }
+            try center.startMonitoring(Self.activityName(for: block.id),
+                                       during: schedule.deviceActivitySchedule())
             lastError = nil
             #if DEBUG
             DebugLog.shared.log(.deviceActivity, "applySchedule(\(block.name)): \(schedule.summary)")
@@ -85,6 +79,8 @@ class SchedulingManager: ObservableObject {
         // Also clear the running flag — if the schedule is removed mid-window,
         // the extension won't fire intervalDidEnd, so we must clean up.
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: block.id))
+        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.scheduleWindowStart(blockID: block.id))
+        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.scheduleReleasedUntil(blockID: block.id))
         #if DEBUG
         DebugLog.shared.log(.deviceActivity, "removeSchedule(\(block.name))")
         #endif
@@ -99,11 +95,12 @@ class SchedulingManager: ObservableObject {
         refresh()
     }
 
-    /// Refresh `activeScheduledBlockIDs` from the App Group running flags.
+    /// Repair missing/delayed callbacks before publishing current schedule state.
     func refresh() {
         var ids: Set<UUID> = []
         let suite = SharedDefaults.suite
         for block in BlockStore.shared.blocks where block.type == .schedule {
+            ScheduleEnforcement.reconcile(block: block)
             if suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id)) {
                 ids.insert(block.id)
             }
