@@ -89,16 +89,8 @@ class UsageLimitManager: ObservableObject {
     /// Clear any lockouts whose end-time has already passed (e.g. while the app
     /// was closed and the one-shot lock window didn't fire) and re-arm the budget.
     func reconcileExpiredLocks() {
-        let now = Date()
         for block in BlockStore.shared.blocks where block.type == .timer {
-            let key = SharedDefaults.Keys.usageLockEnd(blockID: block.id)
-            guard let endsAt = defaults.object(forKey: key) as? Date, endsAt <= now else { continue }
-            UsageMonitoring.stopLockout(for: block.id) // also clears the persisted end-time
-            BlockingActuator.end(blockID: block.id)
-            applyUsageLimit(for: block, forceReset: true) // fresh budget
-            #if DEBUG
-            DebugLog.shared.log(.deviceActivity, "reconcile: cleared expired usage lock \(block.id.uuidString.prefix(8))")
-            #endif
+            UsageMonitoring.reconcileLockout(blockID: block.id)
         }
         refresh()
     }
@@ -138,7 +130,7 @@ class UsageLimitManager: ObservableObject {
     private func startPeriodicRefresh() {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refresh() }
+            Task { @MainActor [weak self] in self?.reconcileExpiredLocks() }
         }
     }
 }

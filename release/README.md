@@ -60,3 +60,9 @@ Use external tester groups for friends. Internal testers are members of your App
 Builds expire 90 days after upload; an expired build needs a fresh uploaded build to resume testing. Each future refresh should increment the build number, archive, upload, confirm processing, and assign the new build to the tester group.
 
 Apple references: [TestFlight overview](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/), [invite external testers](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/), [add internal testers](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers/).
+
+## Persistence candidate — 2.3 (6)
+
+The app and monitor Release archive compile successfully from `9084fb6`. This candidate hardens usage-lock callbacks, repairs live usage shields on foreground recovery, preserves manual blocks at expiry, binds early-release cooldowns to their activation, and registers break re-locking before lifting shields. See the [QA report](../docs/issues/2026-10-31-block-lifecycle-qa.md) and [candidate receipt](builds/2.3-6.json).
+
+**Uploaded successfully on October 31, 2026 at 18:20:53 UTC.** Unlocking the login keychain restored cloud signing. Both final Apple Distribution signatures, Store profiles, build/version identifiers, Family Controls, App Group and app NFC entitlements were verified before upload. Apple reported “Uploaded package is processing.” Processing completion and tester-group availability remain unverified; the App Store Connect browser session requires sign-in. The [receipt](builds/2.3-6.json) records the verified export hash, upload timestamp and evidence paths. No App Store release or merge was performed.

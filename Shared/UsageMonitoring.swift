@@ -99,14 +99,22 @@ enum UsageMonitoring {
     /// clears the shield and re-arms the budget; `reconcileExpiredLocks` is the
     /// backstop if the one-shot window doesn't fire (e.g. very short lockouts).
     static func startLockout(blockID: UUID, minutes: Int) {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+        guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer else { return }
+        let key = SharedDefaults.Keys.usageLockEnd(blockID: blockID)
+        // Repeated thresholds must not replace the live monitor or its deadline.
+        if let end = SharedDefaults.suite.object(forKey: key) as? Date, end > now {
+            reconcileLockout(blockID: blockID, now: now)
+            return
+        }
         let end = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
-        SharedDefaults.suite.set(end, forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID))
+        SharedDefaults.suite.set(end, forKey: key)
+        BlockingActuator.start(blockID: blockID, bypassWeekday: true, setRunningFlag: false)
 
         let cal = Calendar.current
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.hour, .minute, .second], from: now),
-            intervalEnd: cal.dateComponents([.hour, .minute, .second], from: end),
+            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now),
+            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: end),
             repeats: false
         )
         do {
@@ -116,9 +124,28 @@ enum UsageMonitoring {
         }
     }
 
+    /// Both callbacks and foreground recovery consult the deadline, never callback order.
+    static func reconcileLockout(blockID: UUID, now: Date = Date()) {
+        guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
+              let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date else { return }
+        if end > now {
+            BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()), blockID: blockID)
+            return
+        }
+        // Invalidate persisted state before stopping: stop can itself deliver an end callback.
+        stopLockout(for: blockID)
+        if block.isEnabled {
+            BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()), blockID: blockID)
+        } else {
+            BlockingActuator.end(blockID: blockID)
+        }
+        stopUsageMonitor(for: blockID)
+        startUsageMonitor(forBlockID: blockID)
+    }
+
     /// Stop the lockout window and clear its persisted end-time.
     static func stopLockout(for blockID: UUID) {
-        DeviceActivityCenter().stopMonitoring([lockActivityName(for: blockID)])
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID))
+        DeviceActivityCenter().stopMonitoring([lockActivityName(for: blockID)])
     }
 }

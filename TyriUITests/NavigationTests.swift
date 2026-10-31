@@ -30,6 +30,27 @@ final class NavigationTests: XCTestCase {
         tab.tap()
     }
 
+    func testLifecycleDiagnosticsAndScreenTimeAvailability() throws {
+        app.terminate()
+        app.launchEnvironment["TYRI_QA_LIFECYCLE"] = "1"
+        app.launch()
+        app.buttons["Settings"].tap()
+        let requests = app.buttons.matching(identifier: "Allow Screen Time access")
+        let request = requests.allElementsBoundByIndex.first(where: { $0.isHittable }) ?? requests.firstMatch
+        if request.waitForExistence(timeout: 5) {
+            request.tap()
+            _ = app.alerts.firstMatch.waitForExistence(timeout: 15)
+        }
+        capture("qa-screen-time-availability")
+        print("QA AUTH UI: \(app.debugDescription)")
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        safari.launch()
+        XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 10))
+        capture("qa-safari-available")
+        print("QA Safari launched; this does not prove a shield without authorization and a selected token.")
+        safari.terminate()
+    }
+
     func testListCreationCancelSaveAndPersistence() throws {
         openLists()
         capture("02-lists-compact")

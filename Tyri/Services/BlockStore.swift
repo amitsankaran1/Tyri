@@ -49,6 +49,11 @@ class BlockStore: ObservableObject {
 
     func update(_ block: BlockRule) {
         guard let idx = blocks.firstIndex(where: { $0.id == block.id }) else { return }
+        if blocks[idx].isEnabled != block.isEnabled {
+            defaults.set(UUID().uuidString, forKey: SharedDefaults.Keys.manualActivation(blockID: block.id))
+            defaults.removeObject(forKey: SharedDefaults.Keys.cooldownEnd(blockID: block.id))
+            defaults.removeObject(forKey: SharedDefaults.Keys.cooldownActivation(blockID: block.id))
+        }
         blocks[idx] = block
         save()
     }

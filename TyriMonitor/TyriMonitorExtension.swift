@@ -39,9 +39,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
         case .lock:
-            // Lockout window began — ensure the shield is up (idempotent; the
-            // threshold handler already applied it).
-            BlockingActuator.start(blockID: blockID, bypassWeekday: true, setRunningFlag: false)
+            UsageMonitoring.reconcileLockout(blockID: blockID)
         case .usage:
             break // counting window only — never shields on its own.
         case .breakWindow:
@@ -56,17 +54,13 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
         case .lock:
-            // Lockout elapsed — release the shield, clear the lock state, and
-            // re-arm the usage budget from zero.
-            BlockingActuator.end(blockID: blockID)
-            UsageMonitoring.stopLockout(for: blockID)
-            UsageMonitoring.startUsageMonitor(forBlockID: blockID)
+            UsageMonitoring.reconcileLockout(blockID: blockID)
         case .usage:
             break // all-day window auto-restarts (repeats: true); counter resets.
         case .breakWindow:
             // Break over — re-shield, but only if the block is still logically on
             // (endBreak checks; a window that ended mid-break stays released).
-            BreakMonitoring.endBreak(blockID: blockID, reapply: true)
+            BreakMonitoring.finishIfExpired(blockID: blockID)
         }
     }
 
@@ -76,9 +70,16 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         guard let (kind, blockID) = Self.parse(activity), kind == .usage else { return }
 
         // Shield immediately, then register the timed lockout so it auto-releases.
-        BlockingActuator.start(blockID: blockID, bypassWeekday: true, setRunningFlag: false)
-        let lockMinutes = BlockResolution.loadBlock(id: blockID)?.usageLockMinutes ?? 180
+        guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
+              event == UsageMonitoring.usageEventName else { return }
+        let lockMinutes = block.usageLockMinutes
         UsageMonitoring.startLockout(blockID: blockID, minutes: lockMinutes)
+    }
+
+    override func intervalWillEndWarning(for activity: DeviceActivityName) {
+        super.intervalWillEndWarning(for: activity)
+        guard let (kind, blockID) = Self.parse(activity), kind == .breakWindow else { return }
+        BreakMonitoring.finishIfExpired(blockID: blockID)
     }
 
     // MARK: - Parsing

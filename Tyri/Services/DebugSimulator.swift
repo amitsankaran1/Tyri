@@ -71,6 +71,7 @@ enum DebugSimulator {
         }
         SharedDefaults.suite.set(Date(), forKey: SharedDefaults.Keys.cooldownEnd(blockID: active.blockID))
         DebugLog.shared.log(.cooldown, "fast-forwarded cooldown for block \(active.blockID.uuidString.prefix(8))")
+        CooldownManager.shared.restoreActiveCooldownsIfAny()
         CooldownManager.shared.complete()
     }
 
