@@ -30,6 +30,70 @@ final class NavigationTests: XCTestCase {
         tab.tap()
     }
 
+    func testUsageUXReviewStates() throws {
+        for (scenario, title) in [("tracking", "Tracking usage"), ("blocking", "Blocking on"), ("break", "On a break"), ("mixed", "Blocking on"), ("off", "Blocking off")] {
+            app.terminate()
+            app.launchEnvironment["TYRI_UI_REVIEW"] = scenario
+            app.launch()
+            let header = app.staticTexts["focus-status-title"].firstMatch
+            XCTAssertTrue(header.waitForExistence(timeout: 10))
+            XCTAssertEqual(header.label, title)
+            capture("ux-\(scenario)")
+            if scenario == "tracking" {
+                XCTAssertTrue(app.staticTexts["9 of 30 min used"].exists)
+                XCTAssertFalse(app.staticTexts["No active blocks"].exists)
+                app.staticTexts["Doomscroll guard"].tap()
+                XCTAssertTrue(app.textFields["Block name"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.staticTexts["9 of 30 min used"].exists)
+                capture("ux-usage-detail")
+                app.swipeUp()
+                capture("ux-usage-settings")
+                XCTAssertFalse(app.staticTexts["Daily time limit"].exists)
+            }
+        }
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "TYRI_UI_REVIEW")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Screen Time access needed"].firstMatch.waitForExistence(timeout: 10))
+        capture("ux-permission-required")
+    }
+
+    func testWebsiteSaveValidationAndPersistence() throws {
+        openLists()
+        app.buttons["Add list"].tap()
+        app.textFields["List name"].tap()
+        app.textFields["List name"].typeText("Website regression")
+        let website = app.textFields["Add website (e.g. goodreads.com)"]
+        website.tap()
+        website.typeText("example..com")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["website-error"].waitForExistence(timeout: 5))
+        XCTAssertEqual(website.value as? String, "example..com")
+        capture("papercut-invalid-website")
+        website.tap()
+        website.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "example..com".count))
+        website.typeText("https://www.example.com/path?q=1")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Website regression"].waitForExistence(timeout: 5))
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "BLOCK_SEED_DEMO_STATE")
+        app.launch()
+        openLists()
+        app.staticTexts["Website regression"].tap()
+        XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
+        capture("papercut-saved-website")
+    }
+
+    func testTimedBlockEndVisible() throws {
+        app.terminate()
+        app.launchEnvironment["TYRI_UI_REVIEW"] = "locked"
+        app.launch()
+        let endTexts = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Unblocks at"))
+        XCTAssertGreaterThanOrEqual(endTexts.count, 2, "Banner and row show the timed end")
+        XCTAssertFalse(app.staticTexts["Until you stop it"].exists)
+        capture("papercut-timed-end")
+    }
+
     func testLifecycleDiagnosticsAndScreenTimeAvailability() throws {
         app.terminate()
         app.launchEnvironment["TYRI_QA_LIFECYCLE"] = "1"
@@ -161,13 +225,37 @@ final class NavigationTests: XCTestCase {
         app.textFields["Block name"].typeText("Evening focus")
         XCTAssertTrue(app.buttons["Save"].isEnabled)
         app.buttons["Save"].tap()
-        XCTAssertTrue(app.staticTexts["Evening focus"].waitForExistence(timeout: 5))
+        // Simulator registration fails without Screen Time authorization. The
+        // saved editor now stays open and offers an actionable retry.
+        let retries = app.buttons.matching(identifier: "Retry schedule")
+        if retries.firstMatch.waitForExistence(timeout: 3) {
+            capture("papercut-schedule-error")
+            let retry = try XCTUnwrap(retries.allElementsBoundByIndex.first(where: { $0.isHittable }))
+            retry.tap()
+            XCTAssertTrue(retries.firstMatch.exists)
+            app.buttons["Cancel"].tap()
+        }
+        // The status cards make this saved row fall below the initial viewport.
+        for _ in 0..<5 {
+            if app.staticTexts["Evening focus"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Evening focus"].isHittable)
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "BLOCK_SEED_DEMO_STATE")
         app.launch()
-        XCTAssertTrue(app.staticTexts["Evening focus"].waitForExistence(timeout: 5))
+        // The status cards make this saved row fall below the initial viewport.
+        for _ in 0..<5 {
+            if app.staticTexts["Evening focus"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Evening focus"].isHittable)
         app.staticTexts["Evening focus"].tap()
-        XCTAssertTrue(app.buttons["edit-schedule"].waitForExistence(timeout: 5))
+        for _ in 0..<5 {
+            if app.buttons["edit-schedule"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.buttons["edit-schedule"].isHittable)
         XCTAssertTrue(app.buttons["edit-schedule"].label.contains("Weekends"))
         app.swipeUp()
         XCTAssertTrue(app.buttons["Take a break, 5 min"].exists)

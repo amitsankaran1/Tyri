@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import FamilyControls
 
 /// One navigation tree adapts in place. Never replace the editor when size classes change.
@@ -17,15 +18,22 @@ struct HomeView: View {
     @State private var newBlock: BlockRule?
     @State private var showSettings = false
 
-    private var authorized: Bool { screenTime.authorizationStatus == .approved }
-    private var active: [BlockRule] {
-        blockStore.blocks.filter { screenTime.isBlockActive($0) && !breaks.isOnBreak(blockID: $0.id) }
+    @StateObject private var cooldown = CooldownManager.shared
+    @State private var refreshDate = Date()
+    private let statusTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+    private var authorized: Bool { BlockStatusPresentation.canDisplayActivity }
+    private func status(_ block: BlockRule) -> BlockStatusPresentation {
+        _ = refreshDate
+        return .current(for: block)
     }
-    private var onBreak: [BlockRule] {
-        blockStore.blocks.filter { breaks.isOnBreak(blockID: $0.id) }
+    private func blocks(in state: BlockStatusPresentation.State) -> [BlockRule] {
+        blockStore.blocks.filter { status($0).state == state }
     }
+    private var active: [BlockRule] { blocks(in: .blocking) }
+    private var tracking: [BlockRule] { blocks(in: .tracking) }
+    private var onBreak: [BlockRule] { blocks(in: .paused) }
     private var configured: [BlockRule] {
-        blockStore.blocks.filter { !screenTime.isBlockActive($0) && !breaks.isOnBreak(blockID: $0.id) }
+        blockStore.blocks.filter { [.off, .setup, .unavailable].contains(status($0).state) }
     }
     private var tagIsOn: Bool { blockStore.blocks(ofType: .tag).contains { $0.isEnabled } }
 
@@ -34,11 +42,7 @@ struct HomeView: View {
             List(selection: $selectedID) {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label(authorized ? (active.isEmpty ? "No active blocks" : "Blocking is on") : "Let's get set up",
-                              systemImage: authorized && !active.isEmpty ? "lock.shield.fill" : "lock.shield")
-                            .font(.title2.bold())
-                            .foregroundStyle(.primary)
-                        Text(statusDescription).font(.subheadline).foregroundStyle(.secondary)
+                        BlockStatusCard(status: overview)
                         if !blockStore.blocks(ofType: .tag).isEmpty && config.isTagRegistered {
                             if nfc.isScanning {
                                 ProgressView("Hold iPhone near your tag")
@@ -84,7 +88,13 @@ struct HomeView: View {
                         }
                     }
                 }
-                blockSection(authorized ? "Blocking now" : "Configured as active", blocks: active)
+                ForEach(blockStore.blocks.filter { scheduling.registrationErrors[$0.id] != nil }) { block in
+                    Section {
+                        ScheduleRegistrationWarning(block: block, message: scheduling.registrationErrors[block.id] ?? "")
+                    }
+                }
+                blockSection("Blocking now", blocks: active)
+                blockSection("Tracking usage", blocks: tracking)
                 blockSection("On break", blocks: onBreak)
                 blockSection("Your blocks", blocks: configured)
             }
@@ -129,6 +139,11 @@ struct HomeView: View {
         )) {
             Button("OK", role: .cancel) { nfc.errorMessage = nil }
         } message: { Text(nfc.errorMessage ?? "Please try again.") }
+        .onReceive(statusTimer) { now in
+            guard scenePhase == .active else { return }
+            refreshDate = now
+            usage.refresh()
+        }
         .onAppear(perform: refresh)
         .onChange(of: scenePhase) { phase in if phase == .active { refresh() } }
         .onChange(of: blockStore.blocks.map(\.id)) { ids in
@@ -146,16 +161,19 @@ struct HomeView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(block.name).font(.headline)
                                 Text(summary(block)).font(.subheadline).foregroundStyle(.secondary)
-                                if breaks.isOnBreak(blockID: block.id), let end = BreakMonitoring.breakEnd(blockID: block.id) {
-                                    Text(end, style: .timer).font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                                } else if block.type == .timer, let end = usage.lockEnd(for: block.id) {
-                                    Text("Locked until \(end.formatted(date: .omitted, time: .shortened))")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                let presentation = status(block)
+                                Label(presentation.title, systemImage: "circle.fill")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(presentation.color)
+                                Text(presentation.detail).font(.caption).foregroundStyle(.secondary)
+                                if presentation.state == .tracking, let limit = presentation.limitMinutes {
+                                    UsageProgressView(used: presentation.usedMinutes, limit: limit)
+                                        .padding(.top, 4)
                                 }
                             }
                         } icon: {
                             Image(systemName: breaks.isOnBreak(blockID: block.id) ? "cup.and.saucer" : BlockTypeStyle.icon(block.type))
-                                .foregroundStyle(.tint)
+                                .foregroundStyle(status(block).color)
                         }
                         .padding(.vertical, 4)
                     }
@@ -164,16 +182,30 @@ struct HomeView: View {
         }
     }
 
-    private var statusDescription: String {
-        if !authorized { return "Allow Screen Time access to start blocking distractions." }
-        if !onBreak.isEmpty && active.isEmpty { return "You're on a break. Blocking will resume automatically." }
-        if active.isEmpty { return "Your apps are available. Start a tag block or let your schedules take over." }
-        return "\(active.count) block\(active.count == 1 ? " is" : "s are") helping you focus."
+    private var overview: BlockStatusPresentation {
+        if !authorized {
+            return .init(state: .setup, detail: "Allow Screen Time access to start blocking distractions.")
+        }
+        if let first = active.first {
+            let names = active.count == 1 ? first.name : "\(first.name) +\(active.count - 1) more"
+            let detail = active.count == 1 ? "\(names) · \(status(first).detail)" : "\(names). Each block stays on until its own end time."
+            return .init(state: .blocking, detail: detail)
+        }
+        if let first = onBreak.first {
+            return .init(state: .paused, detail: "\(first.name) is paused. Blocking resumes automatically.", end: status(first).end)
+        }
+        if !tracking.isEmpty {
+            return .init(state: .tracking, detail: "Your usage limit\(tracking.count == 1 ? " is" : "s are") running. Apps stay available until you reach a limit.")
+        }
+        if configured.contains(where: { status($0).state == .unavailable }) {
+            return .init(state: .unavailable, detail: "A usage limit isn't running. Open its block to check the setup.")
+        }
+        return .init(state: .off, detail: "No blocks are on right now. Your scheduled and tag blocks are ready when you need them.")
     }
     private func summary(_ block: BlockRule) -> String {
         switch block.type {
         case .schedule: return block.schedule?.summary ?? "No schedule set"
-        case .timer: return "\(BlockEditorView.minutesLabel(block.usageLimitMinutes ?? 30)) daily limit"
+        case .timer: return "Use \(BlockEditorView.minutesLabel(block.usageLimitMinutes ?? 30)), then block for \(BlockEditorView.minutesLabel(block.usageLockMinutes))"
         case .tag: return tagIsOn && block.isEnabled ? "On until you scan your tag" : "Start with your NFC tag"
         }
     }

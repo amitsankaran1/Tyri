@@ -16,7 +16,7 @@ class SchedulingManager: ObservableObject {
     static let shared = SchedulingManager()
 
     @Published private(set) var activeScheduledBlockIDs: Set<UUID> = []
-    @Published var lastError: String?
+    @Published private(set) var registrationErrors: [UUID: String] = [:]
 
     private let center = DeviceActivityCenter()
     private var refreshTimer: Timer?
@@ -40,7 +40,8 @@ class SchedulingManager: ObservableObject {
 
     /// Register or update monitoring for a block's schedule.
     /// No-op (after teardown) when the block isn't a `.schedule` type or has no schedule.
-    func applySchedule(for block: BlockRule) {
+    @discardableResult
+    func applySchedule(for block: BlockRule) -> Bool {
         defer { ScheduleEnforcement.reconcile(block: block) }
         // Remove old split monitors without clearing this window's state/break.
         center.stopMonitoring([
@@ -50,26 +51,29 @@ class SchedulingManager: ObservableObject {
 
         guard block.type == .schedule, let schedule = block.schedule else {
             removeSchedule(for: block)
-            return
+            return true
         }
 
         do {
             try center.startMonitoring(Self.activityName(for: block.id),
                                        during: schedule.deviceActivitySchedule())
-            lastError = nil
+            registrationErrors.removeValue(forKey: block.id)
             #if DEBUG
             DebugLog.shared.log(.deviceActivity, "applySchedule(\(block.name)): \(schedule.summary)")
             #endif
+            return true
         } catch {
             print("❌ startMonitoring failed for block \(block.id): \(error)")
-            lastError = "Couldn't start schedule: \(error.localizedDescription)"
+            registrationErrors[block.id] = "Couldn’t start this schedule. \(error.localizedDescription)"
             #if DEBUG
             DebugLog.shared.log(.deviceActivity, "applySchedule(\(block.name)) FAILED: \(error.localizedDescription)")
             #endif
+            return false
         }
     }
 
     func removeSchedule(for block: BlockRule) {
+        registrationErrors.removeValue(forKey: block.id)
         let names = [
             Self.activityName(for: block.id, segment: .full),
             Self.activityName(for: block.id, segment: .early),

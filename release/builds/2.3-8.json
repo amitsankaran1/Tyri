@@ -1,0 +1,53 @@
+{
+  "verifiedExportSHA256": "931c368ea50ffd5b182c20e15da27c08be1b7c5a81645897539e2aae11b03bd2",
+  "signing": "Cloud Managed Apple Distribution",
+  "products": [
+    {
+      "product": "Tyri.app",
+      "identifier": "name.amitsankaran.Block",
+      "version": "2.3 (8)",
+      "signatureVerified": true,
+      "profileExpiration": "2027-10-10 06:50:53",
+      "familyControls": true,
+      "appGroupVerified": true,
+      "nfcVerified": true
+    },
+    {
+      "product": "TyriMonitor.appex",
+      "identifier": "name.amitsankaran.Block.BlockMonitor",
+      "version": "2.3 (8)",
+      "signatureVerified": true,
+      "profileExpiration": "2027-10-10 06:50:53",
+      "familyControls": true,
+      "appGroupVerified": true,
+      "nfcVerified": false
+    }
+  ],
+  "version": "2.3",
+  "build": "8",
+  "appStoreId": "6757515805",
+  "sourceCommit": "8c24279a72187942a6ceafd84fee13d2fbdea46d",
+  "sourceTree": "5cf9e32e85a990da298d8ba1295c5595d3905903",
+  "archivePath": "/tmp/Tyri-2.3-8-unsigned.xcarchive",
+  "cloudSigningInput": "/tmp/Tyri-2.3-8-cloud.xcarchive",
+  "uploadStatus": "Upload succeeded; Apple reported uploaded package is processing",
+  "uploadedAt": "2026-11-01T19:41:24Z",
+  "uploadLog": "/tmp/tyri-2.3-8-upload.log",
+  "processingCompletionVerified": false,
+  "testerGroupAssignmentVerified": false,
+  "physicalScreenTimeTested": false,
+  "notionPage": "https://app.notion.com/2e616e0e0e3a80148841ff8ca2cb3647",
+  "uploadErrors": [],
+  "uploadWarnings": [],
+  "validation": {
+    "focusedUIScenariosPassedAcrossRuns": 3,
+    "initialUIResult": "/tmp/tyri-build8-ui.xcresult",
+    "scheduleFinalResult": "/tmp/tyri-build8-schedule-final.xcresult",
+    "testCorrections": "Schedule test now expects saved editor on registration failure; retry selector targets visible editor rather than duplicate background controls. Final rerun passed. No app changes were needed.",
+    "domainAndStatusChecksPassed": 25,
+    "scheduleErrorChecksWithOSDoublesPassed": 8,
+    "lifecycleChecksPassed": 12,
+    "calendarChecksPassed": 16
+  },
+  "usageProgress": "Live numeric usage remains unfinished."
+}
