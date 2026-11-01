@@ -1,10 +1,11 @@
-Tyri 2.3 (6): Keep active blocks enforced.
+Tyri 2.3 (7): Clearer blocking status and usage-limit setup.
 
-- Reach Twitter's usage limit. Confirm the shield stays up for the full configured lock duration after reopening Twitter, reopening Tyri, force-quitting Tyri, and locking/unlocking the phone.
-- Confirm expiry releases the usage block, but an independent Block now setting stays active.
-- Save an unchanged usage rule partway through the usage budget; it should not reset the budget.
-- Start Stop early, close Tyri, and reopen after the wait: blocking must remain until you tap Release. An old cooldown must not release a later activation.
-- Take a 5- or 10-minute break, close Tyri, and verify re-lock at the requested end. If re-lock scheduling fails, Tyri should keep the block on and show an error.
-- Verify existing schedules, lists, and NFC blocks survive the update.
+- Focus now distinguishes Tracking usage (blue), Blocking on (red), On a break (amber), and Blocking off.
+- Verify a usage limit shows Tracking usage before the limit is reached. At the limit, it should switch to Blocking on with an end time.
+- Pause one block while another is blocking: the overall status must remain Blocking on.
+- Usage-limit setup now explains: use apps for the allowance, block them for the configured duration, then repeat. Unused usage resets at midnight.
+- Live minutes-used totals are not included in this build. The app displays “Usage so far unavailable”; the numbers shown in the design review were sample data only.
+- Confirm active blocks still prevent weakening settings, unchanged Save preserves the usage budget, and existing lists/schedules/NFC settings survive the upgrade.
+- Confirm usage shields remain through app relaunch and lock/unlock, and breaks resume at the requested time.
 
-Please report the block type, configured duration, approximate failure time, and whether Tyri was open. Simulator logic/UI checks pass; physical Screen Time enforcement still needs device verification.
+Please report the block type, its settings, and whether Tyri was open when an issue occurred.

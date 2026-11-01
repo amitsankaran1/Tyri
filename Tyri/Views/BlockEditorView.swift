@@ -44,6 +44,15 @@ struct BlockEditorView: View {
 
     var body: some View {
         Form {
+            if let block = storedBlock {
+                Section {
+                    let presentation = BlockStatusPresentation.current(for: block)
+                    BlockStatusCard(status: presentation)
+                    if presentation.state == .tracking, let limit = presentation.limitMinutes {
+                        UsageProgressView(used: presentation.usedMinutes, limit: limit)
+                    }
+                }.listRowBackground(Color.clear)
+            }
             if isActive {
                 Section {
                     Label("This block is active. You can rename it or add lists, but you can't weaken it while it runs.", systemImage: "lock.fill")
@@ -190,8 +199,12 @@ struct BlockEditorView: View {
             }
         case .timer:
             Section("Usage limit") {
-                durationPicker("Daily time limit", selection: $usageLimitMinutes, options: Self.usageLimitOptions)
-                durationPicker("Then block apps for", selection: $usageLockMinutes, options: Self.usageLockOptions)
+                durationPicker("Allow usage for", selection: $usageLimitMinutes, options: Self.usageLimitOptions)
+                durationPicker("Then block for", selection: $usageLockMinutes, options: Self.usageLockOptions)
+                Text("Use apps for \(Self.minutesLabel(usageLimitMinutes)), then block them for \(Self.minutesLabel(usageLockMinutes)). Repeat after each block ends.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("Unused time resets at midnight.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         case .tag:
             Section("Tag") {
@@ -277,7 +290,7 @@ struct BlockEditorView: View {
     private var typeBlurb: String {
         switch type {
         case .schedule: return "Blocks the selected lists during a time-of-day window."
-        case .timer:    return "Blocks the lists after a cumulative usage budget, for a lockout period."
+        case .timer:    return "Use your apps, take a forced pause, then start fresh. Time used across these lists counts toward one limit."
         case .tag:      return "Blocks the lists while toggled on by tapping your NFC tag."
         }
     }
