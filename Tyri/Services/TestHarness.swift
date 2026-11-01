@@ -69,6 +69,19 @@ enum TestHarness {
         BlockStore.shared.flush()
         AppGroupStore.shared.flush()
 
+        #if targetEnvironment(simulator)
+        if BlockStatusPresentation.reviewScenario != nil {
+            // Review screenshots use a separate presentation fixture, not fabricated
+            // Screen Time authorization or enforcement. Keep the usage editor editable.
+            if var block = BlockStore.shared.block(id: work.id) {
+                block.schedule = BlockingSchedule()
+                BlockStore.shared.update(block)
+                BlockStore.shared.flush()
+            }
+            return
+        }
+        #endif
+
         // Make one scheduled block active + one usage lock active for the Home screen.
         BlockingActuator.start(blockID: work.id)
         DebugSimulator.fireUsageThreshold(blockID: doom.id)

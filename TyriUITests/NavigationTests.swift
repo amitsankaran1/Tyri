@@ -30,6 +30,34 @@ final class NavigationTests: XCTestCase {
         tab.tap()
     }
 
+    func testUsageUXReviewStates() throws {
+        for (scenario, title) in [("tracking", "Tracking usage"), ("blocking", "Blocking on"), ("break", "On a break"), ("mixed", "Blocking on"), ("off", "Blocking off")] {
+            app.terminate()
+            app.launchEnvironment["TYRI_UI_REVIEW"] = scenario
+            app.launch()
+            let header = app.staticTexts["focus-status-title"].firstMatch
+            XCTAssertTrue(header.waitForExistence(timeout: 10))
+            XCTAssertEqual(header.label, title)
+            capture("ux-\(scenario)")
+            if scenario == "tracking" {
+                XCTAssertTrue(app.staticTexts["9 of 30 min used"].exists)
+                XCTAssertFalse(app.staticTexts["No active blocks"].exists)
+                app.staticTexts["Doomscroll guard"].tap()
+                XCTAssertTrue(app.textFields["Block name"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.staticTexts["9 of 30 min used"].exists)
+                capture("ux-usage-detail")
+                app.swipeUp()
+                capture("ux-usage-settings")
+                XCTAssertFalse(app.staticTexts["Daily time limit"].exists)
+            }
+        }
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "TYRI_UI_REVIEW")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Screen Time access needed"].firstMatch.waitForExistence(timeout: 10))
+        capture("ux-permission-required")
+    }
+
     func testLifecycleDiagnosticsAndScreenTimeAvailability() throws {
         app.terminate()
         app.launchEnvironment["TYRI_QA_LIFECYCLE"] = "1"
@@ -161,13 +189,27 @@ final class NavigationTests: XCTestCase {
         app.textFields["Block name"].typeText("Evening focus")
         XCTAssertTrue(app.buttons["Save"].isEnabled)
         app.buttons["Save"].tap()
-        XCTAssertTrue(app.staticTexts["Evening focus"].waitForExistence(timeout: 5))
+        // The status cards make this saved row fall below the initial viewport.
+        for _ in 0..<5 {
+            if app.staticTexts["Evening focus"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Evening focus"].isHittable)
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "BLOCK_SEED_DEMO_STATE")
         app.launch()
-        XCTAssertTrue(app.staticTexts["Evening focus"].waitForExistence(timeout: 5))
+        // The status cards make this saved row fall below the initial viewport.
+        for _ in 0..<5 {
+            if app.staticTexts["Evening focus"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Evening focus"].isHittable)
         app.staticTexts["Evening focus"].tap()
-        XCTAssertTrue(app.buttons["edit-schedule"].waitForExistence(timeout: 5))
+        for _ in 0..<5 {
+            if app.buttons["edit-schedule"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.buttons["edit-schedule"].isHittable)
         XCTAssertTrue(app.buttons["edit-schedule"].label.contains("Weekends"))
         app.swipeUp()
         XCTAssertTrue(app.buttons["Take a break, 5 min"].exists)
