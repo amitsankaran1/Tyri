@@ -179,6 +179,7 @@ struct HomeView: View {
     }
     private func refresh() {
         screenTime.checkAuthorizationStatus()
+        screenTime.restoreBlockingIfNeeded()
         scheduling.refresh()
         usage.reconcileExpiredLocks()
     }

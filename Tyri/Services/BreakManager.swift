@@ -21,6 +21,7 @@ class BreakManager: ObservableObject {
         let endsAt: Date
     }
 
+    @Published var lastError: String?
     @Published private(set) var activeBreak: ActiveBreak?
 
     private var tickTimer: Timer?
@@ -56,7 +57,11 @@ class BreakManager: ObservableObject {
     /// already used this activation, or another break is running.
     func start(for block: BlockRule) {
         guard isBreakAvailable(for: block) else { return }
-        BreakMonitoring.startBreak(blockID: block.id, minutes: block.breakMinutes)
+        guard BreakMonitoring.startBreak(blockID: block.id, minutes: block.breakMinutes) else {
+            lastError = "The automatic re-lock could not be scheduled. Your block is still on. Please try again."
+            return
+        }
+        lastError = nil
         guard let endsAt = BreakMonitoring.breakEnd(blockID: block.id) else { return }
         activeBreak = ActiveBreak(blockID: block.id, endsAt: endsAt)
         startTickTimer()

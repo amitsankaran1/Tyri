@@ -1,19 +1,10 @@
-Tyri 2.3 (5): easier scheduling and clearer access settings, plus recovery of overnight scheduled blocking.
+Tyri 2.3 (6): Keep active blocks enforced.
 
-New interface:
-- Create block lists Schedule first, Usage limit second, and NFC tag third.
-- Schedule: choose start/end times, use Every day/Weekdays/Weekends shortcuts, or tap individual days. Overnight schedules explain that they end the next day.
-- Stop early: choose whether to allow it and how long to wait before stopping.
-- Take a break: choose whether to allow a temporary pause and its length. Blocking resumes automatically; other active blocks still apply.
-- Check custom days and saved settings after reopening the app.
+- Reach Twitter's usage limit. Confirm the shield stays up for the full configured lock duration after reopening Twitter, reopening Tyri, force-quitting Tyri, and locking/unlocking the phone.
+- Confirm expiry releases the usage block, but an independent Block now setting stays active.
+- Save an unchanged usage rule partway through the usage budget; it should not reset the budget.
+- Start Stop early, close Tyri, and reopen after the wait: blocking must remain until you tap Release. An old cooldown must not release a later activation.
+- Take a 5- or 10-minute break, close Tyri, and verify re-lock at the requested end. If re-lock scheduling fails, Tyri should keep the block on and show an error.
+- Verify existing schedules, lists, and NFC blocks survive the update.
 
-Please check on a physical iPhone:
-- Update without deleting the app; saved lists and rules should remain.
-- During a daily 20:00–10:00 schedule, open Tyri and confirm the rule is active and selected apps (including Instagram) show a shield.
-- Force-quit and reopen Tyri during that window; blocking should remain active.
-- A Friday overnight schedule should continue into Saturday morning, ending at its configured time.
-- Reopening during a break must not shorten the break or grant another one.
-- After an early-disable cooldown or emergency release, reopening must preserve release until the next schedule window.
-- With Tyri closed, check automatic start/end on device.
-
-Automated validation: 16 calendar regression checks and UI tests cover persistence, active restrictions, scheduling controls, and block creation order. Physical Screen Time/NFC behavior has not been verified in this session.
+Please report the block type, configured duration, approximate failure time, and whether Tyri was open. Simulator logic/UI checks pass; physical Screen Time enforcement still needs device verification.

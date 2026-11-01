@@ -145,6 +145,11 @@ struct BlockEditorView: View {
             // a Save right after doesn't re-apply the shield.
             if !showing { isEnabled = storedBlock?.isEnabled ?? false }
         }
+        .alert("Couldn't start break", isPresented: Binding(
+            get: { breakManager.lastError != nil },
+            set: { if !$0 { breakManager.lastError = nil } }
+        )) { Button("OK", role: .cancel) { breakManager.lastError = nil } }
+        message: { Text(breakManager.lastError ?? "") }
         .alert("Delete block?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) { deleteBlock() }
             Button("Cancel", role: .cancel) { }
@@ -374,7 +379,7 @@ struct BlockEditorView: View {
             || prevGroupIDs != Set(block.appGroupIDs)
         switch type {
         case .schedule: if scheduleChanged || !wasActive { schedulingManager.applySchedule(for: block) }
-        case .timer:    if limitsChanged || !wasActive { usageLimitManager.applyUsageLimit(for: block, forceReset: true) }
+        case .timer:    usageLimitManager.applyUsageLimit(for: block, forceReset: limitsChanged)
         case .tag:      break
         }
 
