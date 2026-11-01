@@ -27,6 +27,7 @@ struct AppGroupEditorView: View {
     @State private var selection = FamilyActivitySelection(includeEntireCategory: true)
     @State private var blockedDomains: [String] = []
     @State private var newDomain: String = ""
+    @State private var domainError: String?
     @State private var showPicker = false
     @State private var showDeleteConfirm = false
     @State private var showActiveDeleteAlert = false
@@ -91,6 +92,7 @@ struct AppGroupEditorView: View {
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                         .onSubmit(addDomain)
+                        .onChange(of: newDomain) { _ in domainError = nil }
                     Button(action: addDomain) {
                         Image(systemName: "plus.circle.fill")
                             .foregroundColor(newDomain.isEmpty ? Color.secondary : Color.accentColor)
@@ -98,6 +100,11 @@ struct AppGroupEditorView: View {
                     .accessibilityLabel("Add website")
                     .buttonStyle(.borderless)
                     .disabled(newDomain.isEmpty)
+                }
+                if let domainError {
+                    Label(domainError, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("website-error")
                 }
             } header: {
                 Text("Websites")
@@ -174,24 +181,20 @@ struct AppGroupEditorView: View {
     }
 
     private func addDomain() {
-        guard let domain = Self.normalizeDomain(newDomain) else { return }
-        if !blockedDomains.contains(domain) {
-            blockedDomains.append(domain)
-        }
-        newDomain = ""
+        _ = commitPendingDomain()
     }
 
-    /// "https://www.GoodReads.com/en/book" → "goodreads.com"; nil when the input
-    /// doesn't look like a domain.
-    static func normalizeDomain(_ raw: String) -> String? {
-        var s = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        for scheme in ["https://", "http://"] where s.hasPrefix(scheme) {
-            s = String(s.dropFirst(scheme.count))
+    @discardableResult
+    private func commitPendingDomain() -> Bool {
+        guard !newDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
+        guard let domain = WebsiteDomain.normalize(newDomain) else {
+            domainError = "Enter a valid website, such as example.com or https://example.com."
+            return false
         }
-        if s.hasPrefix("www.") { s = String(s.dropFirst(4)) }
-        if let slash = s.firstIndex(of: "/") { s = String(s[..<slash]) }
-        guard s.contains("."), !s.contains(" "), !s.hasPrefix("."), !s.hasSuffix(".") else { return nil }
-        return s
+        if !blockedDomains.contains(domain) { blockedDomains.append(domain) }
+        newDomain = ""
+        domainError = nil
+        return true
     }
 
     private func loadIfNeeded() {
@@ -208,6 +211,8 @@ struct AppGroupEditorView: View {
 
     private func save() {
         guard hasLoaded, var group = groupStore.group(id: groupID) ?? newGroup else { finish(); return }
+
+        guard commitPendingDomain() else { return }
 
         // While a referencing block is active, only additive changes may land —
         // compare against the *stored* group so stale editor state can't sneak a
