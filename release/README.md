@@ -76,3 +76,7 @@ Approved in chat November 1, 2026. Release app and monitor archive compiled from
 ## Papercut fixes — 2.3 (8)
 
 **Uploaded successfully on November 1, 2026 at 19:41:24 UTC.** Fixes timed-end wording, website Save without +, domain validation and schedule-registration error/retry feedback. Source: `8c24279`. Three focused simulator UI scenarios passed across the initial run and corrected schedule reruns; 25 domain/status, eight schedule-error, 12 lifecycle and 16 calendar checks passed. Both app and monitor signatures, Store profiles, versions and required capabilities were verified. Apple reports processing; tester availability remains unverified. [Release receipt](builds/2.3-8.json) · [Review and validation](../docs/reviews/2026-11-01-papercuts.md). Screenshots are on the Tyri Notion project page.
+
+## Repeat usage cycles and ad hoc sessions — 2.3 (9)
+
+**Uploaded successfully on November 3, 2026 at 05:22:25 UTC.** Fresh usage-monitor identities, stale-threshold protection, registration error/retry feedback, missing expiry repair, and temporary Block for a while sessions. Source: `42170df`. Both Apple Distribution signatures, Store profiles, versions and required entitlements were verified. Apple reports processing. Tester availability and physical enforcement remain acceptance checks; browser access was unavailable. [Release receipt](builds/2.3-9.json) · [Review, screenshots and test evidence](../docs/reviews/2026-11-03-usage-cycle-and-ad-hoc.md). No App Store release was performed.

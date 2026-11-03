@@ -1,0 +1,52 @@
+{
+  "verifiedExportSHA256": "a7431ee80a8a3ed3e8aee1aad0c56a24df5e9d10b4905b9e098cadaadb2b8063",
+  "signing": "Cloud Managed Apple Distribution",
+  "products": [
+    {
+      "product": "Tyri.app",
+      "identifier": "name.amitsankaran.Block",
+      "version": "2.3 (9)",
+      "signatureVerified": true,
+      "profileExpiration": "2027-10-10 06:50:53",
+      "familyControls": true,
+      "appGroupVerified": true,
+      "nfcVerified": true
+    },
+    {
+      "product": "TyriMonitor.appex",
+      "identifier": "name.amitsankaran.Block.BlockMonitor",
+      "version": "2.3 (9)",
+      "signatureVerified": true,
+      "profileExpiration": "2027-10-10 06:50:53",
+      "familyControls": true,
+      "appGroupVerified": true,
+      "nfcVerified": false
+    }
+  ],
+  "version": "2.3",
+  "build": "9",
+  "appStoreId": "6757515805",
+  "sourceCommit": "42170df95a41b74dddb89ba7ace16c3ba232822c",
+  "sourceTree": "fb101cf678f99797142d144ff98cc76c2504b67c",
+  "archivePath": "/tmp/Tyri-2.3-9-unsigned.xcarchive",
+  "cloudSigningInput": "/tmp/Tyri-2.3-9-cloud.xcarchive",
+  "uploadStatus": "Upload succeeded; Apple reported uploaded package is processing",
+  "uploadedAt": "2026-11-03T05:22:25Z",
+  "uploadLog": "/tmp/tyri-2.3-9-upload.log",
+  "processingCompletionVerified": false,
+  "testerGroupAssignmentVerified": false,
+  "physicalScreenTimeTested": false,
+  "notionPage": "https://app.notion.com/p/2e616e0e0e3a80148841ff8ca2cb3647",
+  "uploadErrors": [],
+  "uploadWarnings": [],
+  "validation": {
+    "lifecycleChecksPassed": 32,
+    "scheduleErrorChecksPassed": 8,
+    "calendarChecksPassed": 16,
+    "domainAndStatusChecksPassed": 25,
+    "focusedUIScenariosPassedAcrossRuns": 3,
+    "statusUIResult": "/tmp/tyri-adhoc-ui-final.xcresult",
+    "correctedUIResult": "/tmp/tyri-adhoc-ui-verified.xcresult"
+  },
+  "usageProgress": "Live numeric usage remains unfinished."
+}

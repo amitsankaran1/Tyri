@@ -103,6 +103,8 @@ class ScreenTimeManager: ObservableObject {
     /// Emergency override: clear every block's shield and turn off manual/tag
     /// state. Scheduled/timer blocks may re-apply at their next interval.
     func disableAllBlocks() {
+        if let session = AdHocMonitoring.session { AdHocMonitoring.finish(id: session.id) }
+        AdHocManager.shared.refresh()
         for block in BlockStore.shared.blocks {
             ScheduleEnforcement.releaseCurrentWindow(block: block)
             clearBlockShield(id: block.id)

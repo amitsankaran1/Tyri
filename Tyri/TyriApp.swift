@@ -33,6 +33,7 @@ struct TyriApp: App {
                     SchedulingManager.shared.reapplyAllSchedules()
                     UsageLimitManager.shared.reapplyAllUsageLimits()
                     UsageLimitManager.shared.reconcileExpiredLocks()
+                    AdHocManager.shared.refresh()
                     CooldownManager.shared.restoreActiveCooldownsIfAny()
                     BreakManager.shared.restoreActiveBreaksIfAny()
                     #if DEBUG

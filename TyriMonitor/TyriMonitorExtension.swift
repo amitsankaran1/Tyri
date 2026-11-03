@@ -22,8 +22,10 @@
 
 import DeviceActivity
 import Foundation
+import OSLog
 
 class TyriMonitorExtension: DeviceActivityMonitor {
+    private let log = Logger(subsystem: "name.amitsankaran.Block", category: "MonitorCallbacks")
 
     private enum ActivityKind {
         case schedule    // block.<UUID> (and .early/.late) — time-of-day block
@@ -34,6 +36,8 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
+        log.notice("Interval start \(activity.rawValue, privacy: .public)")
+        if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
         switch kind {
         case .schedule:
@@ -49,6 +53,8 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+        log.notice("Interval end \(activity.rawValue, privacy: .public)")
+        if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
         switch kind {
         case .schedule:
@@ -67,19 +73,24 @@ class TyriMonitorExtension: DeviceActivityMonitor {
     /// Cumulative usage crossed the block's budget — lock the whole block.
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
         super.eventDidReachThreshold(event, activity: activity)
+        log.notice("Threshold \(activity.rawValue, privacy: .public), event \(event.rawValue, privacy: .public)")
         guard let (kind, blockID) = Self.parse(activity), kind == .usage else { return }
 
         // Shield immediately, then register the timed lockout so it auto-releases.
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
-              event == UsageMonitoring.usageEventName else { return }
+              event == UsageMonitoring.usageEventName,
+              activity == UsageMonitoring.usageActivityName(for: blockID),
+              DeviceActivityCenter().activities.contains(activity),
+              (block.usageLimitMinutes ?? 0) > 0 else { return }
         let lockMinutes = block.usageLockMinutes
         UsageMonitoring.startLockout(blockID: blockID, minutes: lockMinutes)
     }
 
     override func intervalWillEndWarning(for activity: DeviceActivityName) {
         super.intervalWillEndWarning(for: activity)
-        guard let (kind, blockID) = Self.parse(activity), kind == .breakWindow else { return }
-        BreakMonitoring.finishIfExpired(blockID: blockID)
+        guard let (kind, blockID) = Self.parse(activity) else { return }
+        if kind == .lock { UsageMonitoring.reconcileLockout(blockID: blockID) }
+        if kind == .breakWindow { BreakMonitoring.finishIfExpired(blockID: blockID) }
     }
 
     // MARK: - Parsing
@@ -113,6 +124,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         } else if uuidPart.hasSuffix(".late") {
             uuidPart = uuidPart.dropLast(".late".count)
         }
+        if kind == .usage { uuidPart = uuidPart.split(separator: ".").first ?? uuidPart }
         guard let id = UUID(uuidString: String(uuidPart)) else { return nil }
         return (kind, id)
     }

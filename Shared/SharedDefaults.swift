@@ -25,6 +25,10 @@ enum SharedDefaults {
         /// Reusable app lists ([AppGroup]) and blocking rules ([BlockRule]).
         static let groups = "groups.v1"
         static let blocks = "blocks.v2"
+        static let adHocSession = "adHocSession.v1"
+        static func usageGeneration(blockID: UUID) -> String { "usageGeneration.\(blockID.uuidString)" }
+        static func usageLockError(blockID: UUID) -> String { "usageLockError.\(blockID.uuidString)" }
+        static func usageError(blockID: UUID) -> String { "usageError.\(blockID.uuidString)" }
         /// Set once the one-time presets.v1 → groups+blocks migration has run.
         static let migratedToBlocksV2 = "migratedToBlocksV2"
 
