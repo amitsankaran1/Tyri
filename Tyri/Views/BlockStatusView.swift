@@ -71,6 +71,9 @@ struct BlockStatusPresentation {
             return Self(state: .blocking, detail: detail, end: end)
         }
         if block.type == .timer {
+            if let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) {
+                return Self(state: .unavailable, detail: error)
+            }
             guard UsageMonitoring.isUsageMonitorActive(for: block.id) else {
                 return Self(state: .unavailable, detail: "Open this block to check its app lists and save to retry.")
             }

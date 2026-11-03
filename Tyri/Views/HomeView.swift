@@ -17,6 +17,8 @@ struct HomeView: View {
     @State private var selectedID: UUID?
     @State private var newBlock: BlockRule?
     @State private var showSettings = false
+    @State private var showAdHoc = false
+    @StateObject private var adHoc = AdHocManager.shared
 
     @StateObject private var cooldown = CooldownManager.shared
     @State private var refreshDate = Date()
@@ -93,6 +95,18 @@ struct HomeView: View {
                         ScheduleRegistrationWarning(block: block, message: scheduling.registrationErrors[block.id] ?? "")
                     }
                 }
+                Section {
+                    Button { showAdHoc = true } label: {
+                        Label(adHoc.session.map { "\($0.group.name) · Unblocks at \($0.endsAt.formatted(date: .omitted, time: .shortened))" } ?? "Block for a while", systemImage: "timer")
+                    }
+                    .accessibilityIdentifier("ad-hoc-block")
+                }
+                ForEach(blockStore.blocks.filter { usageError($0.id) != nil }) { block in
+                    Section {
+                        Label(usageError(block.id) ?? "", systemImage: "exclamationmark.triangle")
+                        Button("Retry block") { usage.applyUsageLimit(for: block); usage.reconcileExpiredLocks(); refreshDate = Date() }
+                    } header: { Text(block.name) }
+                }
                 blockSection("Blocking now", blocks: active)
                 blockSection("Tracking usage", blocks: tracking)
                 blockSection("On break", blocks: onBreak)
@@ -127,6 +141,7 @@ struct HomeView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: $showAdHoc) { NavigationStack { AdHocBlockView() } }
         .sheet(isPresented: $showSettings) { NavigationStack { SettingsView() } }
         .sheet(item: $newBlock) { block in
             NavigationStack {
@@ -143,6 +158,7 @@ struct HomeView: View {
             guard scenePhase == .active else { return }
             refreshDate = now
             usage.refresh()
+            adHoc.refresh()
         }
         .onAppear(perform: refresh)
         .onChange(of: scenePhase) { phase in if phase == .active { refresh() } }
@@ -186,6 +202,9 @@ struct HomeView: View {
         if !authorized {
             return .init(state: .setup, detail: "Allow Screen Time access to start blocking distractions.")
         }
+        if let session = adHoc.session {
+            return .init(state: .blocking, detail: "\(session.group.name) · Unblocks at \(session.endsAt.formatted(date: .omitted, time: .shortened)). Other active blocks still apply.")
+        }
         if let first = active.first {
             let names = active.count == 1 ? first.name : "\(first.name) +\(active.count - 1) more"
             let detail = active.count == 1 ? "\(names) · \(status(first).detail)" : "\(names). Each block stays on until its own end time."
@@ -209,7 +228,12 @@ struct HomeView: View {
         case .tag: return tagIsOn && block.isEnabled ? "On until you scan your tag" : "Start with your NFC tag"
         }
     }
+    private func usageError(_ id: UUID) -> String? {
+        SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: id))
+            ?? SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: id))
+    }
     private func refresh() {
+        adHoc.refresh()
         screenTime.checkAuthorizationStatus()
         screenTime.restoreBlockingIfNeeded()
         scheduling.refresh()

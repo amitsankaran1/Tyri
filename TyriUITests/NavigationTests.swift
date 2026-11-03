@@ -30,6 +30,22 @@ final class NavigationTests: XCTestCase {
         tab.tap()
     }
 
+    func testAdHocBlockSetupAndValidation() throws {
+        app.buttons["ad-hoc-block"].tap()
+        XCTAssertTrue(app.navigationBars["Block for a while"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Start blocking"].isEnabled)
+        app.buttons["ad-hoc-list"].tap()
+        app.buttons["Social media"].tap()
+        app.buttons["ad-hoc-duration"].tap()
+        app.buttons["Custom"].tap()
+        XCTAssertTrue(app.steppers["custom-block-duration"].exists)
+        capture("ad-hoc-custom-duration")
+        // No authorization bypass: Simulator cannot authorize Screen Time.
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.navigationBars["Focus"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Untitled"].exists)
+    }
+
     func testUsageUXReviewStates() throws {
         for (scenario, title) in [("tracking", "Tracking usage"), ("blocking", "Blocking on"), ("break", "On a break"), ("mixed", "Blocking on"), ("off", "Blocking off")] {
             app.terminate()
@@ -147,7 +163,9 @@ final class NavigationTests: XCTestCase {
 
     func testActiveRuleRemainsProtected() throws {
         capture("01-focus-compact")
-        app.staticTexts["Work focus"].tap()
+        let work = app.staticTexts["Work focus"]
+        for _ in 0..<5 where !work.isHittable { app.swipeUp() }
+        work.tap()
         let name = app.textFields["Block name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         XCTAssertEqual(name.value as? String, "Work focus")

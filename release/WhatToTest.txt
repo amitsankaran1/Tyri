@@ -1,10 +1,10 @@
-Tyri 2.3 (8): Timed status, website saving and schedule error feedback.
+Tyri 2.3 (9): Repeat usage lockouts and quick temporary blocks.
 
-- Timed blocks show “Unblocks at” in Focus and details. If Block now is also enabled, the timed end and continuing manual block are both explained.
-- Type a website into a list and tap Save without pressing +. Reopen the list and confirm the website was saved.
-- Paste an HTTP(S) URL containing a path, query or port: only its domain should be stored. Malformed addresses show an inline error and stay available to correct.
-- If a schedule cannot register, Focus and details show a warning and Retry schedule. Settings are saved, but Save keeps the editor open to show the failure. Retry after resolving Screen Time access.
-- Existing active-block restrictions, schedules, usage budgets and NFC settings should survive the upgrade.
-- Live numeric usage totals remain unavailable. Physical Screen Time enforcement still needs on-device verification.
-
-Please report the block type, its settings, and whether Tyri was open when an issue occurred.
+- Complete two usage cycles: reach your allowance, stay blocked for the full lockout, then reach the allowance again. Repeat with Tyri closed and after reopening it.
+- Focus shows registration failures with Retry block. Reopening retries failed usage registrations without replacing a healthy running allowance.
+- In Focus, tap Block for a while, choose a list and duration, then start. The session ends automatically and creates no saved rule. Custom times run from 15 minutes to 24 hours in 15-minute steps.
+- Close Tyri during a temporary session and confirm expiry still works. Changing the source list does not change the session already running.
+- Stop early starts a five-minute wait. Reopening or finishing the wait does not release automatically; tap Release block when the wait completes.
+- Other active blocks still apply after a temporary session ends. Emergency Access clears temporary sessions too.
+- Existing lists, schedules, NFC settings and blocking restrictions should survive the upgrade.
+- Live numeric usage totals remain unavailable. Please report block settings, exact times, build number and whether Tyri was open if blocking ends early or fails to repeat.

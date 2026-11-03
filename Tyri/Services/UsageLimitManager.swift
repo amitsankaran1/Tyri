@@ -48,9 +48,7 @@ class UsageLimitManager: ObservableObject {
         }
 
         // Idempotent launch path: preserve the running monitor (and its counter).
-        if active && !forceReset { return }
-        if active { UsageMonitoring.stopUsageMonitor(for: block.id) }
-
+        if active && !forceReset && defaults.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) == nil { return }
         UsageMonitoring.startUsageMonitor(for: block, groups: groups)
         #if DEBUG
         DebugLog.shared.log(.deviceActivity,

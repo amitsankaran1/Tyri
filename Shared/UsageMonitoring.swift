@@ -15,14 +15,16 @@
 import Foundation
 import DeviceActivity
 import FamilyControls
+import OSLog
 
 enum UsageMonitoring {
+    private static let log = Logger(subsystem: "name.amitsankaran.Block", category: "UsageCycle")
 
     // MARK: - Names
 
     /// All-day counting window carrying the cumulative-usage threshold event.
     static func usageActivityName(for blockID: UUID) -> DeviceActivityName {
-        DeviceActivityName(rawValue: "usage.\(blockID.uuidString)")
+        DeviceActivityName(rawValue: "usage.\(blockID.uuidString)" + (SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID)).map { "." + $0 } ?? ""))
     }
 
     /// One-shot lockout window registered once the threshold is reached.
@@ -50,6 +52,11 @@ enum UsageMonitoring {
         guard block.type == .timer, let limit = block.usageLimitMinutes, limit > 0 else { return nil }
         let tokens = BlockResolution.tokens(for: block, groups: groups)
         guard !tokens.isEmpty else { return nil }
+        if #available(iOS 17.4, *) {
+            return DeviceActivityEvent(applications: tokens.apps, categories: tokens.categories,
+                                       webDomains: tokens.webDomains, threshold: DateComponents(minute: limit),
+                                       includesPastActivity: false)
+        }
         return DeviceActivityEvent(
             applications: tokens.apps,
             categories: tokens.categories,
@@ -65,14 +72,26 @@ enum UsageMonitoring {
     @discardableResult
     static func startUsageMonitor(for block: BlockRule, groups: [AppGroup]) -> Bool {
         guard let event = usageEvent(for: block, groups: groups) else { return false }
+        let center = DeviceActivityCenter()
+        let oldActivities = center.activities.filter { $0.rawValue == "usage.\(block.id.uuidString)" || $0.rawValue.hasPrefix("usage.\(block.id.uuidString).") }
+        let key = SharedDefaults.Keys.usageGeneration(blockID: block.id)
+        let previous = SharedDefaults.suite.string(forKey: key)
+        // Each allowance gets a new identity: a delivered threshold from an old
+        // allowance cannot consume the next one, and iOS gets a fresh event counter.
+        SharedDefaults.suite.set(UUID().uuidString, forKey: key)
+        let activity = usageActivityName(for: block.id)
         do {
-            try DeviceActivityCenter().startMonitoring(
-                usageActivityName(for: block.id),
-                during: allDaySchedule,
-                events: [usageEventName: event]
-            )
+            try center.startMonitoring(activity, during: allDaySchedule, events: [usageEventName: event])
+            center.stopMonitoring(oldActivities)
+            log.notice("Registered allowance \(activity.rawValue, privacy: .public)")
+            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: block.id))
             return true
         } catch {
+            if let previous { SharedDefaults.suite.set(previous, forKey: key) }
+            else { SharedDefaults.suite.removeObject(forKey: key) }
+            SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",
+                                     forKey: SharedDefaults.Keys.usageError(blockID: block.id))
+            log.error("Allowance registration failed: \(error.localizedDescription, privacy: .public)")
             print("❌ startUsageMonitor failed for \(block.id): \(error)")
             return false
         }
@@ -86,7 +105,10 @@ enum UsageMonitoring {
     }
 
     static func stopUsageMonitor(for blockID: UUID) {
-        DeviceActivityCenter().stopMonitoring([usageActivityName(for: blockID)])
+        let center = DeviceActivityCenter()
+        center.stopMonitoring(center.activities.filter {
+            $0.rawValue == "usage.\(blockID.uuidString)" || $0.rawValue.hasPrefix("usage.\(blockID.uuidString).")
+        })
     }
 
     /// True if the all-day usage monitor is currently registered for this block.
@@ -109,17 +131,30 @@ enum UsageMonitoring {
         }
         let end = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
         SharedDefaults.suite.set(end, forKey: key)
+        log.notice("Lock started \(blockID.uuidString, privacy: .public), expires \(end.timeIntervalSince1970)")
         BlockingActuator.start(blockID: blockID, bypassWeekday: true, setRunningFlag: false)
 
+        registerLockout(blockID: blockID, end: end, now: now)
+    }
+
+    private static func registerLockout(blockID: UUID, end: Date, now: Date) {
         let cal = Calendar.current
+        // DeviceActivity requires a minimum 15-minute interval. Short lockouts
+        // use the warning callback at their real deadline, with end as a backstop.
+        let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
+        let monitorEnd = max(end, start.addingTimeInterval(900))
+        let warning = monitorEnd.timeIntervalSince(end)
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now),
-            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: end),
-            repeats: false
+            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+            repeats: false, warningTime: warning > 0 ? DateComponents(second: Int(ceil(warning))) : nil
         )
         do {
             try DeviceActivityCenter().startMonitoring(lockActivityName(for: blockID), during: schedule)
+            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
         } catch {
+            SharedDefaults.suite.set("Blocking is on, but its automatic end couldn't be registered. Open Tyri to retry.",
+                                     forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
             print("❌ startLockout failed for \(blockID): \(error)")
         }
     }
@@ -129,22 +164,26 @@ enum UsageMonitoring {
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
               let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date else { return }
         if end > now {
+            if !DeviceActivityCenter().activities.contains(lockActivityName(for: blockID)) {
+                registerLockout(blockID: blockID, end: end, now: now)
+            }
             BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()), blockID: blockID)
             return
         }
         // Invalidate persisted state before stopping: stop can itself deliver an end callback.
+        log.notice("Lock expired \(blockID.uuidString, privacy: .public), rearming allowance")
         stopLockout(for: blockID)
         if block.isEnabled {
             BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()), blockID: blockID)
         } else {
             BlockingActuator.end(blockID: blockID)
         }
-        stopUsageMonitor(for: blockID)
         startUsageMonitor(forBlockID: blockID)
     }
 
     /// Stop the lockout window and clear its persisted end-time.
     static func stopLockout(for blockID: UUID) {
+        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID))
         DeviceActivityCenter().stopMonitoring([lockActivityName(for: blockID)])
     }

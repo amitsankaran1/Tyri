@@ -6,7 +6,7 @@ repo = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="tyri-callback-qa-") as directory:
     temp = Path(directory)
     files = [Path(__file__).with_name("Doubles.swift")]
-    for relative in ["TyriMonitor/TyriMonitorExtension.swift", "Shared/UsageMonitoring.swift", "Shared/BreakMonitoring.swift"]:
+    for relative in ["TyriMonitor/TyriMonitorExtension.swift", "Shared/UsageMonitoring.swift", "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift"]:
         source = (repo / relative).read_text().replace("import DeviceActivity", "").replace("import FamilyControls", "")
         path = temp / Path(relative).name
         path.write_text(source)
