@@ -78,10 +78,17 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
         // Shield immediately, then register the timed lockout so it auto-releases.
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
-              event == UsageMonitoring.usageEventName,
               activity == UsageMonitoring.usageActivityName(for: blockID),
               DeviceActivityCenter().activities.contains(activity),
               (block.usageLimitMinutes ?? 0) > 0 else { return }
+        if event.rawValue.hasPrefix("progress."),
+           let minute = Int(event.rawValue.dropFirst("progress.".count)),
+           UsageProgress.milestones(for: block.usageLimitMinutes ?? 0).contains(minute) {
+            UsageProgress.record(minute, blockID: blockID)
+            return
+        }
+        guard event == UsageMonitoring.usageEventName else { return }
+        UsageProgress.record(block.usageLimitMinutes ?? 0, blockID: blockID)
         let lockMinutes = block.usageLockMinutes
         UsageMonitoring.startLockout(blockID: blockID, minutes: lockMinutes)
     }

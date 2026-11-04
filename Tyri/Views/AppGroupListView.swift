@@ -6,10 +6,14 @@ struct AppGroupListView: View {
     @StateObject private var blocks = BlockStore.shared
     @State private var selectedID: UUID?
     @State private var newGroup: AppGroup?
+    @State private var showOnboarding = false
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedID) {
+                Section {
+                    Button { showOnboarding = true } label: { Label("Build lists with suggestions", systemImage: "sparkles") }
+                }
                 if groups.groups.isEmpty {
                     Section {
                         VStack(alignment: .leading, spacing: 10) {
@@ -65,6 +69,7 @@ struct AppGroupListView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: $showOnboarding) { ListOnboardingView() }
         .sheet(item: $newGroup) { group in
             NavigationStack { AppGroupEditorView(groupID: group.id, newGroup: group) }
         }

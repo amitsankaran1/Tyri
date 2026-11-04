@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>TyriDescriptionEndpoint</key>
+	<string>https://tyri-creation-api.vercel.app</string>
 	<key>NFCReaderUsageDescription</key>
 	<string>Tyri uses NFC tags to toggle app blocking on and off. Scan your registered NFC tag to control which apps are blocked.</string>
 </dict>

@@ -14,6 +14,10 @@ struct AppGroupEditorView: View {
     let groupID: UUID
     var newGroup: AppGroup? = nil
     var onFinish: (() -> Void)? = nil
+    var recommendation: String? = nil
+    var requireContents = false
+    @State private var authorizationError: String?
+    @StateObject private var screenTime = ScreenTimeManager.shared
 
     @StateObject private var groupStore = AppGroupStore.shared
     @StateObject private var blockStore = BlockStore.shared
@@ -48,6 +52,9 @@ struct AppGroupEditorView: View {
 
     var body: some View {
         Form {
+            if let recommendation {
+                Section("Ideas for this list") { Text(recommendation) }
+            }
             Section("Name") {
                 TextField("List name", text: $name)
                     .textInputAutocapitalization(.words)
@@ -55,7 +62,12 @@ struct AppGroupEditorView: View {
 
             Section {
                 Button {
-                    showPicker = true
+                    Task {
+                        do {
+                            if screenTime.authorizationStatus != .approved { try await screenTime.requestAuthorization() }
+                            showPicker = screenTime.authorizationStatus == .approved
+                        } catch { authorizationError = error.localizedDescription }
+                    }
                 } label: {
                     HStack {
                         Image(systemName: "square.grid.2x2").foregroundColor(Color.accentColor)
@@ -138,10 +150,11 @@ struct AppGroupEditorView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish() } }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (requireContents && !hasContents))
             }
         }
         .familyActivityPicker(isPresented: $showPicker, selection: $selection)
+        .alert("Screen Time access needed", isPresented: Binding(get: { authorizationError != nil }, set: { if !$0 { authorizationError = nil } })) { Button("OK") { authorizationError = nil } } message: { Text(authorizationError ?? "") }
         .alert("Delete list?", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) { deleteGroup() }
             Button("Cancel", role: .cancel) { }
@@ -164,6 +177,10 @@ struct AppGroupEditorView: View {
             schedulingManager.refresh()
             usageLimitManager.refresh()
         }
+    }
+
+    private var hasContents: Bool {
+        !selection.applicationTokens.isEmpty || !selection.categoryTokens.isEmpty || !selection.webDomainTokens.isEmpty || !blockedDomains.isEmpty || WebsiteDomain.normalize(newDomain) != nil
     }
 
     private func finish() {
@@ -212,7 +229,7 @@ struct AppGroupEditorView: View {
     private func save() {
         guard hasLoaded, var group = groupStore.group(id: groupID) ?? newGroup else { finish(); return }
 
-        guard commitPendingDomain() else { return }
+        guard commitPendingDomain(), !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !requireContents || hasContents else { return }
 
         // While a referencing block is active, only additive changes may land —
         // compare against the *stored* group so stale editor state can't sneak a

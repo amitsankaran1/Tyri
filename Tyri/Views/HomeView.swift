@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var selectedID: UUID?
     @State private var newBlock: BlockRule?
     @State private var showSettings = false
+    @State private var showDescription = false
     @State private var showAdHoc = false
     @StateObject private var adHoc = AdHocManager.shared
 
@@ -77,7 +78,7 @@ struct HomeView: View {
                             }
                         }
                         if blockStore.blocks.isEmpty {
-                            Button { newBlock = BlockRule(name: "", type: .schedule) } label: {
+                            Button { showDescription = true } label: {
                                 Label("Create your first block", systemImage: "plus")
                             }
                         }
@@ -120,6 +121,8 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
+                        Button { showDescription = true } label: { Label("Describe a block", systemImage: "text.bubble") }.accessibilityIdentifier("describe-block-action")
+                        Divider()
                         ForEach([BlockType.schedule, .timer, .tag], id: \.self) { type in
                             Button { newBlock = BlockRule(name: "", type: type) } label: {
                                 Label(BlockTypeStyle.title(type), systemImage: BlockTypeStyle.icon(type))
@@ -141,6 +144,7 @@ struct HomeView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: $showDescription) { NavigationStack { DescribeBlockView() } }
         .sheet(isPresented: $showAdHoc) { NavigationStack { AdHocBlockView() } }
         .sheet(isPresented: $showSettings) { NavigationStack { SettingsView() } }
         .sheet(item: $newBlock) { block in
@@ -182,6 +186,9 @@ struct HomeView: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(presentation.color)
                                 Text(presentation.detail).font(.caption).foregroundStyle(.secondary)
+                                if let start = presentation.lockStart, let end = presentation.lockEnd {
+                                    LockElapsedView(start: start, end: end)
+                                }
                                 if presentation.state == .tracking, let limit = presentation.limitMinutes {
                                     UsageProgressView(used: presentation.usedMinutes, limit: limit)
                                         .padding(.top, 4)

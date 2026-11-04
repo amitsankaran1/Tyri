@@ -7,11 +7,15 @@
 //
 
 import SwiftUI
+import FamilyControls
 
 struct BlockEditorView: View {
     let blockID: UUID
     var newBlock: BlockRule? = nil
     var onFinish: (() -> Void)? = nil
+    var sourceDescription: String? = nil
+    var onSaved: (() -> Void)? = nil
+    @State private var validationError: String?
 
     @StateObject private var blockStore = BlockStore.shared
     @StateObject private var groupStore = AppGroupStore.shared
@@ -39,15 +43,23 @@ struct BlockEditorView: View {
 
     static let cooldownOptions: [Int] = [0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
     static let breakOptions: [Int] = [0, 5, 10, 15, 20, 30]
-    static let usageLimitOptions: [Int] = [15, 30, 45, 60, 90, 120]
-    static let usageLockOptions: [Int] = [30, 60, 120, 180, 240, 360]
 
     var body: some View {
         Form {
+            if let sourceDescription {
+                Section("Your description") {
+                    Text(sourceDescription)
+                    Text("Review all settings. Saving a schedule can start blocking immediately when its time window is active.").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if let validationError { Section { Text(validationError).foregroundStyle(.red) } }
             if let block = storedBlock {
                 Section {
                     let presentation = BlockStatusPresentation.current(for: block)
                     BlockStatusCard(status: presentation)
+                    if let start = presentation.lockStart, let end = presentation.lockEnd {
+                        LockElapsedView(start: start, end: end)
+                    }
                     if presentation.state == .tracking, let limit = presentation.limitMinutes {
                         UsageProgressView(used: presentation.usedMinutes, limit: limit)
                     }
@@ -140,7 +152,7 @@ struct BlockEditorView: View {
                 }
             }
         }
-        .navigationTitle(newBlock == nil ? "Block details" : "New block")
+        .navigationTitle(newBlock == nil ? "Block details" : (sourceDescription == nil ? "New block" : "Review block"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish() } }
@@ -202,8 +214,8 @@ struct BlockEditorView: View {
             }
         case .timer:
             Section("Usage limit") {
-                durationPicker("Allow usage for", selection: $usageLimitMinutes, options: Self.usageLimitOptions)
-                durationPicker("Then block for", selection: $usageLockMinutes, options: Self.usageLockOptions)
+                UsageDurationPicker(title: "Allow usage for", minutes: $usageLimitMinutes).disabled(isActive)
+                UsageDurationPicker(title: "Then block for", minutes: $usageLockMinutes).disabled(isActive)
                 Text("Use apps for \(Self.minutesLabel(usageLimitMinutes)), then block them for \(Self.minutesLabel(usageLockMinutes)). Repeat after each block ends.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("Unused time resets at midnight.")
@@ -222,7 +234,7 @@ struct BlockEditorView: View {
     private var flexibilitySection: some View {
         Section {
             Picker("Stop early", selection: $cooldownMinutes) {
-                ForEach(Self.cooldownOptions, id: \.self) { minutes in
+                ForEach(Array(Set(Self.cooldownOptions + [cooldownMinutes])).sorted(), id: \.self) { minutes in
                     Text(minutes == 0 ? "Not allowed" : "Wait \(Self.minutesLabel(minutes))").tag(minutes)
                 }
             }
@@ -234,7 +246,7 @@ struct BlockEditorView: View {
                 .font(.footnote).foregroundStyle(.secondary)
             if type != .timer {
                 Picker("Take a break", selection: $breakMinutes) {
-                    ForEach(Self.breakOptions, id: \.self) { minutes in
+                    ForEach(Array(Set(Self.breakOptions + [breakMinutes])).sorted(), id: \.self) { minutes in
                         Text(minutes == 0 ? "Not allowed" : "\(Self.minutesLabel(minutes))").tag(minutes)
                     }
                 }
@@ -283,13 +295,6 @@ struct BlockEditorView: View {
     }
 
 
-    private func durationPicker(_ title: String, selection: Binding<Int>, options: [Int]) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(options, id: \.self) { minutes in Text(Self.minutesLabel(minutes)).tag(minutes) }
-        }
-        .disabled(isActive)
-    }
-
     private var typeBlurb: String {
         switch type {
         case .schedule: return "Blocks the selected lists during a time-of-day window."
@@ -331,12 +336,12 @@ struct BlockEditorView: View {
         type = block.type
         groupIDs = Set(block.appGroupIDs)
         schedule = block.schedule ?? (newBlock != nil && block.type == .schedule ? BlockingSchedule() : nil)
-        cooldownMinutes = Self.cooldownOptions.min(by: { abs($0 - block.cooldownMinutes) < abs($1 - block.cooldownMinutes) }) ?? block.cooldownMinutes
-        breakMinutes = Self.breakOptions.min(by: { abs($0 - block.breakMinutes) < abs($1 - block.breakMinutes) }) ?? block.breakMinutes
+        cooldownMinutes = block.cooldownMinutes
+        breakMinutes = block.breakMinutes
         if let l = block.usageLimitMinutes {
-            usageLimitMinutes = Self.usageLimitOptions.min(by: { abs($0 - l) < abs($1 - l) }) ?? l
+            usageLimitMinutes = l
         }
-        usageLockMinutes = Self.usageLockOptions.min(by: { abs($0 - block.usageLockMinutes) < abs($1 - block.usageLockMinutes) }) ?? block.usageLockMinutes
+        usageLockMinutes = block.usageLockMinutes
         isEnabled = block.isEnabled
         hasLoaded = true
     }
@@ -359,6 +364,21 @@ struct BlockEditorView: View {
             isEnabled = block.isEnabled || isEnabled
         }
 
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !groupIDs.isEmpty,
+              groupIDs.allSatisfy({ groupStore.group(id: $0) != nil }) else {
+            validationError = "Choose a name and saved lists for this block."; return
+        }
+        if type == .schedule && (schedule == nil || schedule!.weekdays.isEmpty) {
+            validationError = "Choose a schedule and at least one day."; return
+        }
+        if sourceDescription != nil {
+            let selected = groupStore.groups(ids: Array(groupIDs))
+            let hasTargets = selected.allSatisfy { group in
+                !group.selection.applicationTokens.isEmpty || !group.selection.categoryTokens.isEmpty || !group.selection.webDomainTokens.isEmpty || (type != .timer && !group.blockedWebDomains.isEmpty)
+            }
+            guard hasTargets else { validationError = type == .timer ? "Usage limits need apps, categories or websites selected in Apple's picker. Typed website addresses alone can't measure usage." : "Add apps or websites to each selected list before saving."; return }
+        }
+        validationError = nil
         let prevType = block.type
         let prevSchedule = block.schedule
         let prevLimit = block.usageLimitMinutes
@@ -377,6 +397,7 @@ struct BlockEditorView: View {
         if blockStore.block(id: blockID) == nil { blockStore.insert(block) }
         else { blockStore.update(block) }
         blockStore.flush()
+        onSaved?()
 
         // (Re)register monitors for the (possibly changed) type. Skip when nothing
         // the monitor depends on changed and the block is mid-run: applySchedule
@@ -414,7 +435,13 @@ struct BlockEditorView: View {
             if !running && !locked { screenTimeManager.clearBlockShield(id: blockID) }
             else { screenTimeManager.updateBlockShieldIfActive(block) }
         }
-        if schedulingManager.registrationErrors[block.id] == nil { finish() }
+        if schedulingManager.registrationErrors[block.id] == nil {
+            if sourceDescription != nil && screenTimeManager.authorizationStatus != .approved {
+                validationError = "Block saved. Allow Screen Time access in Settings to enable blocking."
+            } else if type == .timer, let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) {
+                validationError = "Block saved, but tracking could not start: \(error)"
+            } else { finish() }
+        }
     }
 
     private func deleteBlock() {

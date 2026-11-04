@@ -43,3 +43,11 @@ This privacy policy may be updated periodically. The current version is always a
 ---
 
 Last updated: January 2025
+
+## Optional natural-language block descriptions
+
+When you use the optional description flow, Tyri sends your description, saved-list names and identifiers, locale, and time zone to its hosted interpretation service. App and category selection tokens stay on your device. You review the interpretation before saving a block. Manual list and block creation remain available.
+
+The service uses Apple's App Attest to verify genuine app requests without a user account. It stores device public keys, attestation receipts, replay counters, short-lived challenges, and request-budget counters. Challenge records are removed after expiry plus one hour; budget records, including daily hashed network-address keys, are removed after two days. Device enrollment records remain for verification. The Tyri service does not persist descriptions or list names in its database or application logs.
+
+The interpretation provider is still being evaluated for this development version; model execution is not enabled. This policy must name the selected provider and its processing/retention terms before live interpretation is enabled.

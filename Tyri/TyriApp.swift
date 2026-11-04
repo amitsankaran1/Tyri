@@ -10,6 +10,7 @@ import CoreNFC
 
 @main
 struct TyriApp: App {
+    @State private var storesReady = false
     @StateObject private var nfcManager = NFCManager.shared
 
     init() {
@@ -18,7 +19,7 @@ struct TyriApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(storesReady: storesReady)
                 .task {
                     _ = AppGroupStore.shared
                     _ = BlockStore.shared
@@ -40,6 +41,7 @@ struct TyriApp: App {
                     TestHarness.seedDemoStateIfRequested()
                     TestHarness.runIfEnabled()
                     #endif
+                    storesReady = true
                 }
         }
     }
