@@ -1,0 +1,48 @@
+{
+  "version": "2.4",
+  "build": "3",
+  "sourceCommit": "7334f2b7255f5a59af16b78898f35968fa40db19",
+  "sha256": "7601b1b61aff7c652f2000423e9693d11e7fd0e60e302fd51e0211e631042cf8",
+  "products": [
+    {
+      "bundle": "name.amitsankaran.Block",
+      "version": "2.4",
+      "build": "3",
+      "signatureVerified": true,
+      "profileExpiration": "2027-11-04 02:27:49",
+      "FamilyControls": true,
+      "appGroupVerified": true,
+      "AIExcluded": true
+    },
+    {
+      "bundle": "name.amitsankaran.Block.BlockMonitor",
+      "version": "2.4",
+      "build": "3",
+      "signatureVerified": true,
+      "profileExpiration": "2027-11-04 02:27:49",
+      "FamilyControls": true,
+      "appGroupVerified": true,
+      "AIExcluded": true
+    }
+  ],
+  "uploaded": true,
+  "uploadedAt": "2026-11-04T21:45:34Z",
+  "deliveryUUID": "fa3c1989-47af-4542-bc59-42af5e288545",
+  "uploadLog": "/private/tmp/tyri-2.4-3-upload.log",
+  "physicalScreenTimeTested": false,
+  "processingCompletionVerified": true,
+  "uploadProcessingState": "COMPLETE",
+  "uploadErrors": [],
+  "uploadWarnings": [],
+  "deferredAICommit": "51cca9b",
+  "releaseBranch": "release/2.4-3",
+  "testerGroupAssignmentVerified": true,
+  "processingState": "VALID",
+  "internalBuildState": "IN_BETA_TESTING",
+  "externalBuildState": "READY_FOR_BETA_SUBMISSION",
+  "internalGroup": "Amit Internal",
+  "testingNotesSaved": true,
+  "usesNonExemptEncryption": false,
+  "buildID": "fa3c1989-47af-4542-bc59-42af5e288545",
+  "externalReviewSubmitted": false
+}
