@@ -39,8 +39,6 @@ struct BlockEditorView: View {
 
     static let cooldownOptions: [Int] = [0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
     static let breakOptions: [Int] = [0, 5, 10, 15, 20, 30]
-    static let usageLimitOptions: [Int] = [15, 30, 45, 60, 90, 120]
-    static let usageLockOptions: [Int] = [30, 60, 120, 180, 240, 360]
 
     var body: some View {
         Form {
@@ -48,6 +46,9 @@ struct BlockEditorView: View {
                 Section {
                     let presentation = BlockStatusPresentation.current(for: block)
                     BlockStatusCard(status: presentation)
+                    if let start = presentation.lockStart, let end = presentation.lockEnd {
+                        LockElapsedView(start: start, end: end)
+                    }
                     if presentation.state == .tracking, let limit = presentation.limitMinutes {
                         UsageProgressView(used: presentation.usedMinutes, limit: limit)
                     }
@@ -202,8 +203,8 @@ struct BlockEditorView: View {
             }
         case .timer:
             Section("Usage limit") {
-                durationPicker("Allow usage for", selection: $usageLimitMinutes, options: Self.usageLimitOptions)
-                durationPicker("Then block for", selection: $usageLockMinutes, options: Self.usageLockOptions)
+                UsageDurationPicker(title: "Allow usage for", minutes: $usageLimitMinutes).disabled(isActive)
+                UsageDurationPicker(title: "Then block for", minutes: $usageLockMinutes).disabled(isActive)
                 Text("Use apps for \(Self.minutesLabel(usageLimitMinutes)), then block them for \(Self.minutesLabel(usageLockMinutes)). Repeat after each block ends.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("Unused time resets at midnight.")
@@ -283,13 +284,6 @@ struct BlockEditorView: View {
     }
 
 
-    private func durationPicker(_ title: String, selection: Binding<Int>, options: [Int]) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(options, id: \.self) { minutes in Text(Self.minutesLabel(minutes)).tag(minutes) }
-        }
-        .disabled(isActive)
-    }
-
     private var typeBlurb: String {
         switch type {
         case .schedule: return "Blocks the selected lists during a time-of-day window."
@@ -334,9 +328,9 @@ struct BlockEditorView: View {
         cooldownMinutes = Self.cooldownOptions.min(by: { abs($0 - block.cooldownMinutes) < abs($1 - block.cooldownMinutes) }) ?? block.cooldownMinutes
         breakMinutes = Self.breakOptions.min(by: { abs($0 - block.breakMinutes) < abs($1 - block.breakMinutes) }) ?? block.breakMinutes
         if let l = block.usageLimitMinutes {
-            usageLimitMinutes = Self.usageLimitOptions.min(by: { abs($0 - l) < abs($1 - l) }) ?? l
+            usageLimitMinutes = l
         }
-        usageLockMinutes = Self.usageLockOptions.min(by: { abs($0 - block.usageLockMinutes) < abs($1 - block.usageLockMinutes) }) ?? block.usageLockMinutes
+        usageLockMinutes = block.usageLockMinutes
         isEnabled = block.isEnabled
         hasLoaded = true
     }

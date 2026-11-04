@@ -65,6 +65,23 @@ enum UsageMonitoring {
         )
     }
 
+    private static func progressEvents(for block: BlockRule, limitEvent: DeviceActivityEvent) -> [DeviceActivityEvent.Name: DeviceActivityEvent] {
+        var events = [usageEventName: limitEvent]
+        for minute in UsageProgress.milestones(for: block.usageLimitMinutes ?? 0) {
+            let event: DeviceActivityEvent
+            if #available(iOS 17.4, *) {
+                event = DeviceActivityEvent(applications: limitEvent.applications, categories: limitEvent.categories,
+                                            webDomains: limitEvent.webDomains, threshold: DateComponents(minute: minute),
+                                            includesPastActivity: false)
+            } else {
+                event = DeviceActivityEvent(applications: limitEvent.applications, categories: limitEvent.categories,
+                                            webDomains: limitEvent.webDomains, threshold: DateComponents(minute: minute))
+            }
+            events[DeviceActivityEvent.Name("progress.\(minute)")] = event
+        }
+        return events
+    }
+
     // MARK: - Register / tear down
 
     /// Start the all-day usage threshold monitor for a timer block. Returns false
@@ -81,7 +98,17 @@ enum UsageMonitoring {
         SharedDefaults.suite.set(UUID().uuidString, forKey: key)
         let activity = usageActivityName(for: block.id)
         do {
-            try center.startMonitoring(activity, during: allDaySchedule, events: [usageEventName: event])
+            var reportsProgress = true
+            do {
+                try center.startMonitoring(activity, during: allDaySchedule, events: progressEvents(for: block, limitEvent: event))
+            } catch {
+                // Progress is optional: never lose enforcement because extra
+                // reporting events could not be registered on this device.
+                try center.startMonitoring(activity, during: allDaySchedule, events: [usageEventName: event])
+                reportsProgress = false
+            }
+            if reportsProgress { UsageProgress.record(0, blockID: block.id, reset: true) }
+            else { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
             center.stopMonitoring(oldActivities)
             log.notice("Registered allowance \(activity.rawValue, privacy: .public)")
             SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: block.id))

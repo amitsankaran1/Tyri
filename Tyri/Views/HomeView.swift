@@ -182,6 +182,9 @@ struct HomeView: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(presentation.color)
                                 Text(presentation.detail).font(.caption).foregroundStyle(.secondary)
+                                if let start = presentation.lockStart, let end = presentation.lockEnd {
+                                    LockElapsedView(start: start, end: end)
+                                }
                                 if presentation.state == .tracking, let limit = presentation.limitMinutes {
                                     UsageProgressView(used: presentation.usedMinutes, limit: limit)
                                         .padding(.top, 4)

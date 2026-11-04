@@ -1,10 +1,11 @@
-Tyri 2.3 (9): Repeat usage lockouts and quick temporary blocks.
+Tyri 2.4 (3): Flexible duration timers and Focus progress.
 
-- Complete two usage cycles: reach your allowance, stay blocked for the full lockout, then reach the allowance again. Repeat with Tyri closed and after reopening it.
-- Focus shows registration failures with Retry block. Reopening retries failed usage registrations without replacing a healthy running allowance.
-- In Focus, tap Block for a while, choose a list and duration, then start. The session ends automatically and creates no saved rule. Custom times run from 15 minutes to 24 hours in 15-minute steps.
-- Close Tyri during a temporary session and confirm expiry still works. Changing the source list does not change the session already running.
-- Stop early starts a five-minute wait. Reopening or finishing the wait does not release automatically; tap Release block when the wait completes.
-- Other active blocks still apply after a temporary session ends. Emergency Access clears temporary sessions too.
-- Existing lists, schedules, NFC settings and blocking restrictions should survive the upgrade.
-- Live numeric usage totals remain unavailable. Please report block settings, exact times, build number and whether Tyri was open if blocking ends early or fails to repeat.
+- Both Allow usage for and Then block for use the same duration picker: 00:05 to 23:55 in five-minute steps.
+- Confirm Cancel preserves the old duration and saved choices survive reopening.
+- Try a five-minute allowance followed by a five-minute block. Verify blocking starts and releases with Tyri closed, then repeat the cycle.
+- Focus shows the latest usage reported by iOS and blocked time counting upward. Usage updates are periodic, not a continuous stopwatch.
+- Check a longer lock spanning midnight. Unused allowance still resets at midnight.
+- Existing lists, schedules, NFC settings and active-block restrictions should survive this update.
+- Report settings, exact times and whether Tyri was open if a timer ends early or fails to repeat.
+
+AI block creation and list onboarding are deferred to a later build.
