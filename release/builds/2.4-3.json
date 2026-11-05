@@ -29,7 +29,7 @@
   "uploadedAt": "2026-11-04T21:45:34Z",
   "deliveryUUID": "fa3c1989-47af-4542-bc59-42af5e288545",
   "uploadLog": "/private/tmp/tyri-2.4-3-upload.log",
-  "physicalScreenTimeTested": false,
+  "physicalScreenTimeTested": true,
   "processingCompletionVerified": true,
   "uploadProcessingState": "COMPLETE",
   "uploadErrors": [],
@@ -44,5 +44,11 @@
   "testingNotesSaved": true,
   "usesNonExemptEncryption": false,
   "buildID": "fa3c1989-47af-4542-bc59-42af5e288545",
-  "externalReviewSubmitted": false
+  "externalReviewSubmitted": false,
+  "deviceValidation": {
+    "source": "Amit user report",
+    "date": "2026-11-04",
+    "statement": "i checked 2.4 3 it works",
+    "individualScenariosEnumerated": false
+  }
 }
