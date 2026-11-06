@@ -313,7 +313,7 @@ Use this checkout as cwd. `QA_REVISION=dcab8bf` runs new regression cases agains
 
 | Suite | Baseline evidence | Current result |
 |---|---|---|
-| `python3 Tests/StateMachineQA/run.py` | Final 11-case baseline run: 9 failures (including 2 defensive helper checks) | 11/11 pass |
+| `python3 Tests/StateMachineQA/run.py` | Final 11-case baseline run: 9 failures (including 2 defensive helper checks) | 13/13 pass |
 | `python3 Tests/MutationStateQA/run.py` | 8 failures | 8/8 pass |
 | `python3 Tests/NFCStateQA/run.py` | 4 failures | 4/4 pass |
 | `python3 Tests/MigrationStateQA/run.py` | 4 failures | 4/4 pass |
@@ -339,10 +339,16 @@ TZ=UTC /private/tmp/tyri-ownership
 
 No claim that simulator/logic tests resolve the reported physical iPhone incident. Required device checks remain: effective individual-app/mixed-category shielding; callback delivery across app kill/reboot; real revocation/regrant; token expiration; high aggregate store/activity pressure; extension runtime while a foreground transition is in progress. The App Group lock spans synchronous OS calls, so device validation must include contention and responsiveness. The lock is released by process death; it cannot make multiple Apple services crash-atomic.
 
-iOS 17.5 previously timed out in both shipped-baseline and candidate XCTest runs; it is not passed. Previously passing modern OS runs are evidence for 2.4 (4), not automatically for this patch. 2.4 (5) is being packaged from this audit. Final source/signature/upload evidence will be recorded below.
+iOS 17.5 previously timed out in both shipped-baseline and candidate XCTest runs; it is not passed. Previously passing modern OS runs are evidence for 2.4 (4), not automatically for this patch. 2.4 (6) is being packaged from this audit. Final source/signature/upload evidence will be recorded below.
 
 ### UI test environment correction
 
 An initial unsigned simulator build lacked App Group entitlements, so the transaction guard declined mutation and the existing launch assertion failed. This is retained as a failed run (`/private/tmp/tyri-state-ui.xcresult`). With normal simulator signing, all four affected flows pass on iOS 27 (`/private/tmp/tyri-state-signed-ui.xcresult`) and all six reliability/duration tests pass on iOS 26.5 (`/private/tmp/tyri-state-265-ui.xcresult`). This was not fixed by bypassing the guard or faking authorization.
 
-Visual review caught ambiguous temporary-session copy: the error state now says “Session ends at” and explains that a session retains its original selection. It does not claim that failed protection is working during the early-release wait. The final copy gets a focused UI rerun and screenshot.
+Visual review caught ambiguous temporary-session copy: the error state now says “Session ends at” and explains that a session retains its original selection. It does not claim that failed protection is working during the early-release wait. The final copy passed its focused iOS 26.5 UI rerun and was visually inspected.
+
+### Final precision regression and superseded package
+
+Final review of new recovery code found a fractional-second issue: DateComponents drops subsecond time, but warningTime was rounded up from an unrounded repair start. The warning could arrive one second before the real deadline, be correctly ignored, and leave only the later 15-minute fallback. Two added production-code tests reproduced this in both temporary-session and break repair. Both now floor the repair start before constructing the schedule, matching usage-lock registration; all 13 lifecycle tests pass.
+
+The 2.4 (5) upload process was interrupted and its package superseded. Build 2.4 (6) carries the precision fix; do not distribute the earlier package. The unchanged UI evidence remains valid. This is recorded as a defect caught during implementation, not a pre-existing shipped bug.

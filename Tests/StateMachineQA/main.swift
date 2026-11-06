@@ -3,13 +3,18 @@ import Foundation
  static func main() throws {
   var failures=0, checks=0
   func check(_ yes:Bool,_ label:String){checks+=1; if !yes {failures+=1};print("\(yes ? "PASS" : "FAIL"): \(label)")}
-  let now=Date()
+  let now=Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970) + 0.75)
   try AdHocMonitoring.start(group:AppGroup(),minutes:30,now:now)
   let session=AdHocMonitoring.session!
   DeviceActivityCenter().stopMonitoring([AdHocMonitoring.activityName(session.id)])
   AdHocMonitoring.reconcile(now:now.addingTimeInterval(60))
   check(DeviceActivityCenter().activities.contains(AdHocMonitoring.activityName(session.id)),"SM-03 temporary session repairs lost expiry registration")
   check(AdHocMonitoring.session?.endsAt == session.endsAt,"SM-03 repair preserves original deadline")
+  DeviceActivityCenter().stopMonitoring([AdHocMonitoring.activityName(session.id)])
+  AdHocMonitoring.reconcile(now:session.endsAt.addingTimeInterval(-60.25))
+  let temporarySchedule=DeviceActivityCenter.schedules[AdHocMonitoring.activityName(session.id)]!
+  let temporaryWarning=Calendar.current.date(from:temporarySchedule.intervalEnd)!.addingTimeInterval(-Double(temporarySchedule.warningTime?.second ?? 0))
+  check(temporaryWarning==session.endsAt,"SM-03 fractional-time temporary repair warning is exactly at deadline")
   AdHocMonitoring.finish(id:session.id)
   // OS registration may overlap cancellation/expiry in the other process.
   DeviceActivityCenter.onStart={if let item=AdHocMonitoring.session {AdHocMonitoring.finish(id:item.id)}}
@@ -36,6 +41,9 @@ import Foundation
   DeviceActivityCenter().stopMonitoring([BreakMonitoring.breakActivityName(for:tag)])
   BreakMonitoring.finishIfExpired(blockID:tag,now:now.addingTimeInterval(60))
   check(DeviceActivityCenter().activities.contains(BreakMonitoring.breakActivityName(for:tag)) && BreakMonitoring.breakEnd(blockID:tag)==original,"SM-03 lost break re-lock is repaired without extending pause")
+  let breakSchedule=DeviceActivityCenter.schedules[BreakMonitoring.breakActivityName(for:tag)]!
+  let breakWarning=Calendar.current.date(from:breakSchedule.intervalEnd)!.addingTimeInterval(-Double(breakSchedule.warningTime?.second ?? 0))
+  check(breakWarning==original,"SM-03 fractional-time break repair warning is exactly at deadline")
   DeviceActivityCenter().stopMonitoring([BreakMonitoring.breakActivityName(for:tag)])
   DeviceActivityCenter.fail=true
   BreakMonitoring.finishIfExpired(blockID:tag,now:now.addingTimeInterval(60))

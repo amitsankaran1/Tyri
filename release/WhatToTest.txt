@@ -1,4 +1,4 @@
-2.4 (5) — State-machine reliability fixes
+2.4 (6) — State-machine reliability fixes
 
 Fixes races between foreground actions and background callbacks, stale usage monitors after list deletion, timer rearming after emergency release, lost break/session expiry registration, duplicate NFC callbacks, interrupted migration retries, and schedule edit protection before delayed callbacks. Temporary sessions now show enforcement errors. Manual Block now remains indefinite; AI/NL features remain deferred.
 

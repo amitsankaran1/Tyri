@@ -84,10 +84,11 @@ enum BreakMonitoring {
         if end <= now { endBreak(blockID: blockID, reapply: true); return }
         guard !DeviceActivityCenter().activities.contains(breakActivityName(for: blockID)) else { return }
         let cal = Calendar.current
-        let monitorEnd = max(end, now.addingTimeInterval(900))
+        let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
+        let monitorEnd = max(end, start.addingTimeInterval(900))
         let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now),
+            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
             intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
             repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
         do { try DeviceActivityCenter().startMonitoring(breakActivityName(for: blockID), during: schedule) }
