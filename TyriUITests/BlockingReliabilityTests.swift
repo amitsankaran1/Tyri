@@ -14,7 +14,6 @@ import XCTest
     }
     func testBlockNowExplainsMissingAuthorization() {
         XCTAssertTrue(app.navigationBars["Focus"].waitForExistence(timeout: 10))
-        for _ in 0..<7 where !app.buttons["open-block-Doomscroll guard"].isHittable {app.swipeUp()}
         for _ in 0..<7 where !app.buttons["open-block-Doomscroll guard"].isHittable { app.swipeUp() }
         app.buttons["open-block-Doomscroll guard"].tap()
         XCTAssertTrue(app.textFields["Block name"].waitForExistence(timeout: 10))
@@ -26,11 +25,23 @@ import XCTest
         }
         capture("block-now-toggle")
         XCTAssertEqual(toggle.value as? String, "1")
-        app.buttons["Save"].tap()
+        for _ in 0..<8 where !app.buttons["save-block"].isHittable { app.swipeUp() }
+        app.buttons["save-block"].tap()
         let alert = app.alerts["Couldn’t start blocking"]
         XCTAssertTrue(alert.waitForExistence(timeout: 5))
         XCTAssertTrue(alert.staticTexts["Allow Screen Time access in Settings before using Block now."].exists)
         capture("block-now-authorization-error")
+    }
+    func testActiveActionsAppearBeforeConfiguration() {
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "TYRI_UI_REVIEW")
+        app.launch()
+        let row = app.buttons["open-block-Doomscroll guard"]
+        for _ in 0..<7 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        XCTAssertTrue(app.textFields["Block name"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Stop early…"].isHittable)
+        capture("active-actions-simulated-lock-no-authorization")
     }
     func testDiagnosticsAvailableWithoutDebugMenu() {
         app.buttons["Settings"].tap()

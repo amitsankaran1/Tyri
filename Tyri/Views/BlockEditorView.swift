@@ -142,6 +142,12 @@ struct BlockEditorView: View {
             }
 
 
+            Section {
+                Button("Save block", action: save)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("save-block")
+            }
+
             if newBlock == nil {
                 Section {
                     Button(role: .destructive) {

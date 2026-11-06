@@ -31,12 +31,12 @@ final class DurationTests: XCTestCase {
         app.navigationBars["Then block for"].buttons["Cancel"].tap()
         XCTAssertTrue(app.staticTexts["23:55"].exists)
         capture("duration-settings", app)
-        app.buttons["Save"].tap()
+        for _ in 0..<8 where !app.buttons["save-block"].isHittable { app.swipeUp() }
+        app.buttons["save-block"].tap()
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "BLOCK_SEED_DEMO_STATE")
         app.launch()
         XCTAssertTrue(app.navigationBars["Focus"].waitForExistence(timeout: 5))
-        for _ in 0..<6 where !app.buttons["open-block-Doomscroll guard"].isHittable { app.swipeUp() }
         for _ in 0..<7 where !app.buttons["open-block-Doomscroll guard"].isHittable { app.swipeUp() }
         app.buttons["open-block-Doomscroll guard"].tap()
         app.swipeUp()
