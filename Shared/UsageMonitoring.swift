@@ -88,6 +88,9 @@ enum UsageMonitoring {
     /// when there's nothing to monitor or registration fails.
     @discardableResult
     static func startUsageMonitor(for block: BlockRule, groups: [AppGroup]) -> Bool {
+        guard let transition = EnforcementTransaction.begin() else { return false }
+        defer { transition.finish() }
+
         guard let event = usageEvent(for: block, groups: groups) else { return false }
         let center = DeviceActivityCenter()
         let oldActivities = center.activities.filter { $0.rawValue == "usage.\(block.id.uuidString)" || $0.rawValue.hasPrefix("usage.\(block.id.uuidString).") }
@@ -97,6 +100,12 @@ enum UsageMonitoring {
         // allowance cannot consume the next one, and iOS gets a fresh event counter.
         SharedDefaults.suite.set(UUID().uuidString, forKey: key)
         let activity = usageActivityName(for: block.id)
+        // A replacement needs a slot too. At the activity ceiling, retaining the
+        // old generation makes every retry fail forever. This call intentionally
+        // starts a fresh allowance; retire the old one only when space is needed.
+        if center.activities.count >= 20 && !oldActivities.isEmpty {
+            center.stopMonitoring(oldActivities)
+        }
         do {
             var reportsProgress = true
             do {
@@ -129,11 +138,17 @@ enum UsageMonitoring {
     /// Convenience used by the extension, which loads from the shared store.
     @discardableResult
     static func startUsageMonitor(forBlockID id: UUID) -> Bool {
+        guard let transition = EnforcementTransaction.begin() else { return false }
+        defer { transition.finish() }
+
         guard let block = BlockResolution.loadBlock(id: id) else { return false }
         return startUsageMonitor(for: block, groups: BlockResolution.loadGroups())
     }
 
     static func stopUsageMonitor(for blockID: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         let center = DeviceActivityCenter()
         center.stopMonitoring(center.activities.filter {
             $0.rawValue == "usage.\(blockID.uuidString)" || $0.rawValue.hasPrefix("usage.\(blockID.uuidString).")
@@ -150,6 +165,9 @@ enum UsageMonitoring {
     /// clears the shield and re-arms the budget; `reconcileExpiredLocks` is the
     /// backstop if the one-shot window doesn't fire (e.g. very short lockouts).
     static func startLockout(blockID: UUID, minutes: Int) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer else { return }
         let key = SharedDefaults.Keys.usageLockEnd(blockID: blockID)
@@ -193,6 +211,9 @@ enum UsageMonitoring {
 
     /// Both callbacks and foreground recovery consult the deadline, never callback order.
     static func reconcileLockout(blockID: UUID, now: Date = Date()) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
               let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date else { return }
         if end > now {
@@ -210,11 +231,16 @@ enum UsageMonitoring {
         } else {
             BlockingActuator.end(blockID: blockID)
         }
-        startUsageMonitor(forBlockID: blockID)
+        if !isUsageMonitorActive(for: blockID) {
+            startUsageMonitor(forBlockID: blockID)
+        }
     }
 
     /// Stop the lockout window and clear its persisted end-time.
     static func stopLockout(for blockID: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID))
         DeviceActivityCenter().stopMonitoring([lockActivityName(for: blockID)])

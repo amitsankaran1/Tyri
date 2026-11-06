@@ -35,6 +35,9 @@ class TyriMonitorExtension: DeviceActivityMonitor {
     }
 
     override func intervalDidStart(for activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.intervalDidStart(for: activity)
         log.notice("Interval start \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
@@ -53,6 +56,9 @@ class TyriMonitorExtension: DeviceActivityMonitor {
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.intervalDidEnd(for: activity)
         log.notice("Interval end \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
@@ -74,6 +80,9 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
     /// Cumulative usage crossed the block's budget — lock the whole block.
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.eventDidReachThreshold(event, activity: activity)
         log.notice("Threshold \(activity.rawValue, privacy: .public), event \(event.rawValue, privacy: .public)")
         guard let (kind, blockID) = Self.parse(activity), kind == .usage else { return }
@@ -98,7 +107,11 @@ class TyriMonitorExtension: DeviceActivityMonitor {
     }
 
     override func intervalWillEndWarning(for activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.intervalWillEndWarning(for: activity)
+        if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
         if kind == .lock { UsageMonitoring.reconcileLockout(blockID: blockID) }
         if kind == .breakWindow { BreakMonitoring.finishIfExpired(blockID: blockID) }

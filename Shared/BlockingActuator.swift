@@ -29,6 +29,9 @@ enum BlockingActuator {
     ///   passes `false` — re-shielding after a break must not grant another break.
     @discardableResult
     static func start(blockID: UUID, bypassWeekday: Bool = false, setRunningFlag: Bool = true, resetBreakAllowance: Bool = true) -> Bool {
+        guard let transition = EnforcementTransaction.begin() else { return false }
+        defer { transition.finish() }
+
         guard let block = BlockResolution.loadBlock(id: blockID) else { return false }
 
         if !bypassWeekday, block.type == .schedule, let schedule = block.schedule {
@@ -53,6 +56,9 @@ enum BlockingActuator {
     /// Also tears down any in-flight break — a window that ends mid-break must not
     /// leave a pending re-lock window or stale break state behind.
     static func end(blockID: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         BreakMonitoring.resetAllowance(blockID: blockID)
         clearShields(blockID: blockID)
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: blockID))
@@ -85,6 +91,9 @@ enum BlockingActuator {
     ///   clears) the categories store, to isolate whether a `.specific` categories
     ///   shield suppresses sibling stores' app shields on device.
     static func apply(tokens: BlockResolution.Tokens, blockID: UUID, includeCategories: Bool = true) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         let overCapacity = tokens.apps.count > maxChunksPerBlock * tokensPerStore || tokens.webDomains.count > maxChunksPerBlock * tokensPerStore
         let empty = tokens.apps.isEmpty && tokens.categories.isEmpty && tokens.webDomains.isEmpty && tokens.domains.isEmpty
         var appChunks = chunks(tokens.apps, size: tokensPerStore)
@@ -190,6 +199,9 @@ enum BlockingActuator {
     /// the categories store). A missing chunk count means at most the legacy single
     /// apps store was written, so chunk 0 + cats is exactly the right set.
     static func clearShields(blockID: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         let count = max(1, SharedDefaults.suite.integer(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID)))
         for i in 0..<count {
             ManagedSettingsStore(named: appsStoreName(for: blockID, chunk: i)).clearAllSettings()

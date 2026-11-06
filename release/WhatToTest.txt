@@ -1,13 +1,13 @@
-2.4 (4) — Blocking reliability candidate
+2.4 (5) — State-machine reliability fixes
 
-Fixes foreground recovery of missing usage/schedule monitors, applies Block now before monitor registration, frees a consumed usage-monitor slot before lockout registration, and reports incomplete/empty shield settings. Permission failures now show an alert. Settings > Blocking diagnostics captures on-device monitor and shield-setting evidence. Active controls are easier to reach, and Save block remains available in the form on adaptive layouts. Block now starts on Save and remains indefinite; a duration choice is deferred to the next change.
+Fixes races between foreground actions and background callbacks, stale usage monitors after list deletion, timer rearming after emergency release, lost break/session expiry registration, duplicate NFC callbacks, interrupted migration retries, and schedule edit protection before delayed callbacks. Temporary sessions now show enforcement errors. Manual Block now remains indefinite; AI/NL features remain deferred.
 
-Please test individual apps and mixed app/category lists on the affected iPhone 15 Pro:
-1. Block now + Save: immediately open each selected app.
-2. Schedule starts while Tyri is closed; confirm every selected app is blocked.
-3. Reach a short usage allowance; check lockout, expiry and a second cycle.
-4. Close/reopen Tyri mid-allowance and mid-lockout; neither should reset.
-5. Overlapping blocks and breaks: ending one must preserve another active block.
-If anything fails, immediately share Blocking diagnostics and include iOS version, block/list names and the app that remained accessible.
+Please test on the affected iPhone 15 Pro with individual-app and mixed lists:
+1. Start a schedule or usage lock while Tyri is closed, then reopen and close it repeatedly. The original end time should stay fixed.
+2. Complete two usage allowance/lockout cycles. Emergency release must allow the next usage cycle to start.
+3. Take a break; close Tyri and confirm protection resumes on time. End one overlapping block and confirm the other remains effective.
+4. Delete an inactive list used by a usage rule; its apps should no longer count toward that rule.
+5. Scan/cancel/retry an NFC scan; a successful scan should toggle once.
+6. Start Block for a while; confirm automatic end and the five-minute early-release wait.
 
-Automated logic and simulator checks do not prove physical Screen Time enforcement. This candidate fixes reproduced code defects; the reported device failure still requires acceptance testing. AI/NL features remain deferred.
+If anything fails, share Settings > Blocking diagnostics immediately, including iOS version, list/block names, and the app that stayed accessible. Automated logic and simulator checks do not prove physical Screen Time enforcement; the original device incident still needs acceptance testing.

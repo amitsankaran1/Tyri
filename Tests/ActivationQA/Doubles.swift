@@ -34,6 +34,7 @@ class Scheduling {
  func refresh(){}
  func repairMissingSchedules(){}
 }
+class Breaks {func restoreActiveBreaksIfAny(){}}
 class AdHoc {func refresh(){}}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"activation-tests-\(UUID())")!;enum Keys {static func running(blockID:UUID)->String{"running.\(blockID)"}}}
 enum BreakMonitoring {static func resetAllowance(blockID:UUID){}}
@@ -46,7 +47,7 @@ class GroupStore {var groups:[Int]=[]}
 class Probe {
  let groupStore=GroupStore();var validationError:String?
  let blockStore=Store(),screenTimeManager=Screen(),usageLimitManager=Usage(),schedulingManager=Scheduling()
- var screenTime:Screen{screenTimeManager};var usage:Usage{usageLimitManager};var scheduling:Scheduling{schedulingManager};let adHoc=AdHoc()
+ var screenTime:Screen{screenTimeManager};var usage:Usage{usageLimitManager};var scheduling:Scheduling{schedulingManager};let adHoc=AdHoc();let breaks=Breaks()
  var blockID:UUID{blockStore.value.id}
  var hasLoaded=true;var newBlock:BlockRule?=nil;var type:BlockType = .timer;var schedule:Int?=nil;var usageLimitMinutes=5,usageLockMinutes=5,cooldownMinutes=5,breakMinutes=0;var groupIDs:Set<UUID>=[];var isEnabled=true;var name="Timer";var finished=false
  func finish(){finished=true}

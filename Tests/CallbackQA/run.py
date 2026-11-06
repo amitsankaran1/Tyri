@@ -15,6 +15,7 @@ with tempfile.TemporaryDirectory(prefix="tyri-callback-qa-") as directory:
         path = temp / Path(relative).name
         path.write_text(source)
         files.append(path)
+    if not os.environ.get('QA_REVISION'): files.append(repo/'Shared/EnforcementTransaction.swift')
     subprocess.run(["swiftc", "-module-cache-path", str(temp / "cache"), *map(str, files), "-o", str(temp / "run")], check=True)
     result = subprocess.run([str(temp / "run")], capture_output=True, text=True, check=True)
     print(result.stdout, end="")

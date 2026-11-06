@@ -358,6 +358,9 @@ struct BlockEditorView: View {
     }
 
     private func save() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard hasLoaded, var block = blockStore.block(id: blockID) ?? newBlock else { finish(); return }
 
         screenTimeManager.checkAuthorizationStatus()
@@ -447,6 +450,9 @@ struct BlockEditorView: View {
     }
 
     private func deleteBlock() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard let block = blockStore.block(id: blockID) else {
             blockStore.delete(id: blockID)
             finish()
@@ -457,10 +463,11 @@ struct BlockEditorView: View {
             showActiveDeleteAlert = true
             return
         }
+        blockStore.delete(id: blockID)
+        blockStore.flush()
         schedulingManager.removeSchedule(for: block)
         usageLimitManager.removeUsageLimit(for: block)
         screenTimeManager.clearBlockShield(id: blockID)
-        blockStore.delete(id: blockID)
         finish()
     }
 }

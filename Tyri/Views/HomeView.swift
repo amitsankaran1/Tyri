@@ -237,6 +237,7 @@ struct HomeView: View {
             ?? SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: id))
     }
     private func refresh() {
+        breaks.restoreActiveBreaksIfAny()
         adHoc.refresh()
         screenTime.checkAuthorizationStatus()
         screenTime.restoreBlockingIfNeeded()

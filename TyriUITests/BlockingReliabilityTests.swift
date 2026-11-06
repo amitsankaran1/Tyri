@@ -43,6 +43,17 @@ import XCTest
         XCTAssertTrue(app.buttons["Stop early…"].isHittable)
         capture("active-actions-simulated-lock-no-authorization")
     }
+    func testTemporarySessionShowsEnforcementFailure() {
+        app.terminate()
+        app.launchEnvironment["TYRI_UI_REVIEW"] = "adhoc-error"
+        app.launch()
+        let row = app.buttons["ad-hoc-block"]
+        for _ in 0..<6 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        XCTAssertTrue(app.staticTexts["Blocking needs attention"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["temporary-session-error"].exists || app.staticTexts["temporary-session-error"].exists)
+        capture("temporary-session-error-empty-token-fixture")
+    }
     func testDiagnosticsAvailableWithoutDebugMenu() {
         app.buttons["Settings"].tap()
         app.buttons["Blocking diagnostics"].tap()

@@ -42,6 +42,9 @@ class SchedulingManager: ObservableObject {
     /// No-op (after teardown) when the block isn't a `.schedule` type or has no schedule.
     @discardableResult
     func applySchedule(for block: BlockRule) -> Bool {
+        guard let transition = EnforcementTransaction.begin() else { return false }
+        defer { transition.finish() }
+
         defer { ScheduleEnforcement.reconcile(block: block) }
         // Remove old split monitors without clearing this window's state/break.
         center.stopMonitoring([
@@ -73,6 +76,9 @@ class SchedulingManager: ObservableObject {
     }
 
     func removeSchedule(for block: BlockRule) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         registrationErrors.removeValue(forKey: block.id)
         let names = [
             Self.activityName(for: block.id, segment: .full),
@@ -111,6 +117,9 @@ class SchedulingManager: ObservableObject {
 
     /// Repair missing/delayed callbacks before publishing current schedule state.
     func refresh() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         var ids: Set<UUID> = []
         let suite = SharedDefaults.suite
         for block in BlockStore.shared.blocks where block.type == .schedule {

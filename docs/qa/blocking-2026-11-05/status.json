@@ -1,62 +1,47 @@
 {
-  "phase": "2.4 (4) available in TestFlight \u00b7 Amit Internal",
-  "verdict": "TESTFLIGHT READY \u2014 affected-device acceptance pending",
+  "phase": "State-machine audit \u00b7 2.4 (5) release verification",
+  "verdict": "FIXED \u2014 final simulator and package checks",
   "notion": "https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384",
   "rows": [
     [
-      "REPRODUCED",
-      "2.3 (9) baseline",
-      "894 pass / 1 capacity failure in expanded callback suite"
+      "DOCUMENTED",
+      "14 interacting state machines",
+      "docs/STATE_MACHINES.md: states, invariants, tables, evidence"
     ],
     [
-      "REPRODUCED",
-      "2.4 (3) baseline",
-      "Same 20-activity capacity failure; corrected in candidate"
-    ],
-    [
-      "PASS",
-      "Schedule recovery",
-      "10 manager + 7 ownership checks; production logic / OS doubles"
-    ],
-    [
-      "PASS (LOGIC)",
-      "Activation + recovery",
-      "6 activation + 6 usage-manager checks"
-    ],
-    [
-      "FIXED / TESTING",
-      "Shield failure reporting",
-      "3 hidden-error cases reproduced; 16 actuator checks pass"
-    ],
-    [
-      "PASS (LOGIC)",
-      "Callback + capacity",
-      "895 checks; 20-slot lockout repaired; physical store limit unverified"
-    ],
-    [
-      "UNVERIFIED",
-      "iOS 17.5 / iPhone 15 Pro",
-      "Candidate and clean shipped-baseline runs time out in XCTest"
+      "FIXED",
+      "6 grouped issues",
+      "Concurrency, deletion, recovery, NFC, migration, calendar ownership"
     ],
     [
       "PASS",
-      "iOS 26.2 / 26.5",
-      "4/4 UI tests on each iPhone 15 Pro simulator"
+      "New regressions",
+      "11 lifecycle + 8 mutations + 4 NFC + 4 migration"
     ],
     [
       "PASS",
-      "iOS 27.0 / 27.1",
-      "Covered scenarios pass; Duo Save defect fixed and retested"
+      "Interprocess concurrency",
+      "320/320 updates, recursive leases, process-exit recovery"
     ],
     [
-      "REVIEWED",
-      "Usability + state machines",
-      "Notion screenshots/proposals; clarify manual now, duration next"
+      "PASS",
+      "Existing logic battery",
+      "895 callbacks; activation, recovery, schedule, shield, calendar"
+    ],
+    [
+      "PASS",
+      "iOS 27 UI",
+      "4/4 affected flows; screenshots inspected"
+    ],
+    [
+      "RUNNING",
+      "iOS 26.5 + release",
+      "Final UI and signed package verification"
     ],
     [
       "PENDING",
-      "Physical device acceptance",
-      "iPhone 15 Pro unavailable; iOS version not supplied"
+      "Physical acceptance",
+      "Affected iPhone unavailable; effective shielding unverified"
     ]
   ]
 }
