@@ -307,13 +307,31 @@ Presentation enum: `setup`, `paused`, `unavailable`, `blocking`, `tracking`, `of
 
 No new navigation defect reproduced. Explicit bottom Save from 2.4 (4) remains. UI screenshots and test results are recorded below; presentation fixtures do not imply effective blocking.
 
+## Machine 15: Launch, foreground and reconciliation
+
+Sources: [TyriApp](../Tyri/TyriApp.swift), [HomeView](../Tyri/Views/HomeView.swift), service initialization and periodic refresh timers.
+
+States: cold; initializing stores/authorization; migrating; restoring registrations/owners; foreground; inactive/background; resumed. These phases are implicit in `.task`, `scenePhase`, service initialization and timers. The runtime records survive process exit; local observable managers are projections rebuilt at launch.
+
+| Event | Transition / invariant |
+|---|---|
+| Cold launch | Migrate legacy defaults; load stores; run guarded migration; reload migrated collections |
+| Startup restoration | Reapply schedules, recover usage, reconcile locks/session, restore cooldown/break; preserve valid ownership identities |
+| Foreground entry | Restore break/session, refresh authorization/manual shields, reconcile usage deadlines, repair missing schedule/usage registration when authorized |
+| Foreground status tick | Recompute presentation and temporary-session expiry; never invent usage progress |
+| Service 30-second tick | Reconcile calendar ownership / expired usage locks |
+| Background/suspension | DeviceActivity extension owns background callbacks; foreground timers are not an expiry guarantee |
+| Relaunch after interruption | Repeat recovery from persisted facts; healthy allowance must not reset and stale cooldown must not release a newer activation |
+
+SM-03 fixes expired-lock ordering and missing expiry repair. The signed native UI runs exercise initialization and the existing launch assertion harness. There is no claim that background timer execution substitutes for a registered extension callback.
+
 ## Verification ledger and reproducible commands
 
 Use this checkout as cwd. `QA_REVISION=dcab8bf` runs new regression cases against baseline production code where supported. Test doubles replace unavailable Apple frameworks, not the production transition bodies.
 
 | Suite | Baseline evidence | Current result |
 |---|---|---|
-| `python3 Tests/StateMachineQA/run.py` | Final 11-case baseline run: 9 failures (including 2 defensive helper checks) | 13/13 pass |
+| `python3 Tests/StateMachineQA/run.py` | Shipped baseline: 2/13 pass (missing repair also fails the 2 precision assertions); pre-precision candidate: 11/13 pass; includes 2 defensive helper checks | 13/13 pass |
 | `python3 Tests/MutationStateQA/run.py` | 8 failures | 8/8 pass |
 | `python3 Tests/NFCStateQA/run.py` | 4 failures | 4/4 pass |
 | `python3 Tests/MigrationStateQA/run.py` | 4 failures | 4/4 pass |
@@ -321,7 +339,7 @@ Use this checkout as cwd. `QA_REVISION=dcab8bf` runs new regression cases agains
 | Existing CallbackQA | Prior release baseline retained | 895/895 pass on final lifecycle code |
 | Existing ActivationQA / UsageRecoveryQA | Prior release baseline retained | 7/7 and 7/7 pass |
 | Existing SchedulingQA / ShieldQA | Prior release baseline retained | 10/10 and 16/16 pass |
-| iOS SDK build | — | Debug simulator build and Release archive succeeded; final signed package verification pending |
+| iOS SDK build | — | Debug simulator build, Release archive, distribution signatures/profiles and required entitlements verified |
 | Native UI affected flows | — | iOS 27: 4/4 pass; iOS 26.5: 6/6 pass (including duration cancellation/persistence) |
 
 TransactionQA must run with access to its isolated preferences domain; a filesystem-sandboxed subprocess run cannot establish cross-process preferences visibility. The first sandboxed attempt failed that environmental check; the unrestricted isolated-domain run passed. This is not counted as an app bug or hidden as a passing test.
@@ -339,7 +357,7 @@ TZ=UTC /private/tmp/tyri-ownership
 
 No claim that simulator/logic tests resolve the reported physical iPhone incident. Required device checks remain: effective individual-app/mixed-category shielding; callback delivery across app kill/reboot; real revocation/regrant; token expiration; high aggregate store/activity pressure; extension runtime while a foreground transition is in progress. The App Group lock spans synchronous OS calls, so device validation must include contention and responsiveness. The lock is released by process death; it cannot make multiple Apple services crash-atomic.
 
-iOS 17.5 previously timed out in both shipped-baseline and candidate XCTest runs; it is not passed. Previously passing modern OS runs are evidence for 2.4 (4), not automatically for this patch. 2.4 (6) is being packaged from this audit. Final source/signature/upload evidence will be recorded below.
+iOS 17.5 previously timed out in both shipped-baseline and candidate XCTest runs; it is not passed. Previously passing modern OS runs are evidence for 2.4 (4), not automatically for this patch. 2.4 (6) is available in internal TestFlight; final source/signature/upload evidence is recorded below.
 
 ### UI test environment correction
 
@@ -349,6 +367,18 @@ Visual review caught ambiguous temporary-session copy: the error state now says 
 
 ### Final precision regression and superseded package
 
-Final review of new recovery code found a fractional-second issue: DateComponents drops subsecond time, but warningTime was rounded up from an unrounded repair start. The warning could arrive one second before the real deadline, be correctly ignored, and leave only the later 15-minute fallback. Two added production-code tests reproduced this in both temporary-session and break repair. Both now floor the repair start before constructing the schedule, matching usage-lock registration; all 13 lifecycle tests pass.
+Final review of new recovery code found a fractional-second issue: DateComponents drops subsecond time, but warningTime was rounded up from an unrounded repair start. The warning could arrive one second before the real deadline, be correctly ignored, and leave only the later 15-minute fallback. Two added production-code tests reproduced this in both temporary-session and break repair (`QA_REVISION=38da72b`: 11/13 pass; corrected source: 13/13 pass). Both now floor the repair start before constructing the schedule, matching usage-lock registration; all 13 lifecycle tests pass.
 
 The 2.4 (5) upload process was interrupted and its package superseded. Build 2.4 (6) carries the precision fix; do not distribute the earlier package. The unchanged UI evidence remains valid. This is recorded as a defect caught during implementation, not a pre-existing shipped bug.
+
+### Release package verification
+
+Final production source: `8bb1ef551f303f3812a983c80f16a05395fc14fd` (base audit/fixes `38da72b33b9da00f6aac8bab2a3e6b5caa0c16a3`). Build: **2.4 (6)**. IPA SHA-256: `ae1551ba5c19d88b13167cf719aa8cd0de308f952f2d20acf4a474a0000f2beb`. App and extension distribution signatures and provisioning profiles verified; Family Controls and shared App Group present, debug entitlement absent; app NFC present; deferred AI capabilities absent. Release receipt: `release/builds/2.4-6.json`.
+
+App Store Connect query confirmed no 2.4 (5) build after the canceled attempt. Apple accepted the corrected package without errors. Processing is VALID; internal state is IN_BETA_TESTING; membership in Amit Internal is verified. Build/delivery ID: `ad212863-6283-479b-af04-8a91ccd435b6`. Testing notes and export compliance are saved; external review was not submitted. Screenshots and captions are preserved on the [Notion reliability task](https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384); temporary-session screenshot is an explicit empty-token/presentation fixture, and manual validation uses real missing authorization. Both were visually inspected.
+
+### Final status
+
+All six confirmed issue groups are fixed with regressions in the source above. The audit contains 15 state-machine areas. New suites pass 29 checks (13 lifecycle, 8 mutation, 4 NFC, 4 migration), plus the real interprocess lease test. Existing suites and modern-runtime UI checks pass as detailed above. The workspace dashboard records the same outcome. Physical-device acceptance and the listed platform risks remain open; they are not labeled fixed by automated evidence.
+
+The complete audit remains this repository file. A proposed full-file attachment to Notion was blocked by automatic approval review because that upload was not explicitly authorized; only the separately authorized results and screenshots are published there. No workaround upload was attempted.

@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='tyri-state-qa-') as d:
     files=[d/'Doubles.swift',r/'Tests/StateMachineQA/main.swift']
     for f in ['Shared/UsageMonitoring.swift','Shared/BreakMonitoring.swift','Shared/AdHocMonitoring.swift','Shared/UsageProgress.swift','Shared/EnforcementDiagnostics.swift']:
         p=d/Path(f).name;p.write_text(source(f).replace('import DeviceActivity','').replace('import FamilyControls',''));files.append(p)
-    if not os.environ.get('QA_REVISION') and (r/'Shared/EnforcementTransaction.swift').exists():
+    if (r/'Shared/EnforcementTransaction.swift').exists():
         files.append(r/'Shared/EnforcementTransaction.swift')
         # Test defaults are isolated; transaction synchronizes this same suite.
     subprocess.run(['swiftc','-parse-as-library','-module-cache-path',str(d/'cache'),*map(str,files),'-o',str(d/'run')],check=True)
