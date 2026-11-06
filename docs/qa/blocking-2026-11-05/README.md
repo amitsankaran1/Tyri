@@ -51,3 +51,15 @@ Current controls expose independent state machines: manual activation, schedule 
 ## Release gate
 
 Latest source must pass relevant logic checks, simulator review and Release archive/signature/profile verification before uploading. The user authorized upload after checks. Record the final source commit, SHA-256, Apple build ID, processing state and internal tester assignment in `release/builds/2.4-4.json`. Do not equate upload success with tester availability or physical enforcement.
+
+## Final local QA outcome
+
+Production source: `e9bcf4b1f005d4fd134c25d4e3900913a586ddbd`. Final IPA SHA-256: `e04e982b05ad629f0627342f1cd7f5ad7a56efeaf9c600211f88d18fded9e659`.
+
+- iOS 26.2 and 26.5 / iPhone 15 Pro: four focused UI tests pass. The final form Save action was additionally retested on 26.2 (two passes).
+- iOS 27.0 / iPhone 18 Pro: four focused UI tests, state-screen review and active-actions placement pass.
+- iOS 27.1 / Duo: active actions, diagnostics and progress display pass; two Save-dependent flows initially failed because the toolbar was absent. Adding an explicit Save block action to the form fixes them; both corrected runs pass. This is a real adaptive-layout usability fix, not merely a selector change.
+- iOS 17.5: UNVERIFIED. Candidate and clean shipped baseline both exceed XCTest time allowances waiting for idleness. A candidate process was also sampled in a SwiftUI layout loop. This does not establish that the legacy runtime is safe; physical acceptance remains necessary.
+- Release archive, both Apple Distribution signatures, both Store profiles, version/build and required capabilities pass verification. AI remains excluded.
+
+Amit confirmed: clarify indefinite manual activation in this build; add a duration choice next. Screenshots and full state-machine proposals are in Notion. The incident remains open for actual iPhone shielding acceptance; local test completion is not a claim that all field failures are resolved.

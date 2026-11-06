@@ -1,6 +1,6 @@
 2.4 (4) — Blocking reliability candidate
 
-Fixes foreground recovery of missing usage/schedule monitors, applies Block now before monitor registration, frees a consumed usage-monitor slot before lockout registration, and reports incomplete/empty shield settings. Permission failures now show an alert. Settings > Blocking diagnostics captures on-device monitor and shield-setting evidence.
+Fixes foreground recovery of missing usage/schedule monitors, applies Block now before monitor registration, frees a consumed usage-monitor slot before lockout registration, and reports incomplete/empty shield settings. Permission failures now show an alert. Settings > Blocking diagnostics captures on-device monitor and shield-setting evidence. Active controls are easier to reach, and Save block remains available in the form on adaptive layouts. Block now starts on Save and remains indefinite; a duration choice is deferred to the next change.
 
 Please test individual apps and mixed app/category lists on the affected iPhone 15 Pro:
 1. Block now + Save: immediately open each selected app.

@@ -1,17 +1,17 @@
 {
-  "phase": "QA + usability pass; release held for updated UI and OS checks",
-  "verdict": "INVESTIGATING \u2014 device failure not yet explained",
+  "phase": "2.4 (4) available in TestFlight \u00b7 Amit Internal",
+  "verdict": "TESTFLIGHT READY \u2014 affected-device acceptance pending",
   "notion": "https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384",
   "rows": [
     [
-      "PASS",
+      "REPRODUCED",
       "2.3 (9) baseline",
-      "32 callback/lifecycle checks \u00b7 OS doubles"
+      "894 pass / 1 capacity failure in expanded callback suite"
     ],
     [
-      "PASS",
+      "REPRODUCED",
       "2.4 (3) baseline",
-      "32 callback/lifecycle checks \u00b7 OS doubles"
+      "Same 20-activity capacity failure; corrected in candidate"
     ],
     [
       "PASS",
@@ -34,24 +34,24 @@
       "895 checks; 20-slot lockout repaired; physical store limit unverified"
     ],
     [
-      "RETESTING",
+      "UNVERIFIED",
       "iOS 17.5 / iPhone 15 Pro",
-      "SwiftUI layout loop sampled; diagnostic layout simplified"
+      "Candidate and clean shipped-baseline runs time out in XCTest"
     ],
     [
-      "RUNNING",
+      "PASS",
       "iOS 26.2 / 26.5",
-      "26.2: 2 pass, 2 test-selector failures; corrections being verified"
+      "4/4 UI tests on each iPhone 15 Pro simulator"
     ],
     [
-      "PASS / QUEUED",
+      "PASS",
       "iOS 27.0 / 27.1",
-      "27.0 permission alert + diagnostics passed; latest UI changes need retest"
+      "Covered scenarios pass; Duo Save defect fixed and retested"
     ],
     [
-      "IN REVIEW",
+      "REVIEWED",
       "Usability + state machines",
-      "Notion proposals saved; active actions and manual duration clarified"
+      "Notion screenshots/proposals; clarify manual now, duration next"
     ],
     [
       "PENDING",
