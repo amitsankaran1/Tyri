@@ -196,6 +196,7 @@ struct HomeView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                    .accessibilityIdentifier("open-block-\(block.name)")
                 }
             }
         }
@@ -220,7 +221,7 @@ struct HomeView: View {
             return .init(state: .tracking, detail: "Your usage limit\(tracking.count == 1 ? " is" : "s are") running. Apps stay available until you reach a limit.")
         }
         if configured.contains(where: { status($0).state == .unavailable }) {
-            return .init(state: .unavailable, detail: "A usage limit isn't running. Open its block to check the setup.")
+            return .init(state: .unavailable, detail: "A block needs attention. Open it to check its lists, permission or schedule.")
         }
         return .init(state: .off, detail: "No blocks are on right now. Your scheduled and tag blocks are ready when you need them.")
     }
@@ -239,7 +240,10 @@ struct HomeView: View {
         adHoc.refresh()
         screenTime.checkAuthorizationStatus()
         screenTime.restoreBlockingIfNeeded()
-        scheduling.refresh()
         usage.reconcileExpiredLocks()
+        if screenTime.authorizationStatus == .approved {
+            scheduling.repairMissingSchedules()
+            usage.reapplyAllUsageLimits()
+        }
     }
 }

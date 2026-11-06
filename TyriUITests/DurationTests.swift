@@ -8,7 +8,8 @@ final class DurationTests: XCTestCase {
         app.launchEnvironment["BLOCK_RUN_TEST_HARNESS"] = "1"
         app.launchEnvironment["TYRI_UI_REVIEW"] = "tracking"
         app.launch()
-        app.staticTexts["Doomscroll guard"].tap()
+        for _ in 0..<7 where !app.buttons["open-block-Doomscroll guard"].isHittable { app.swipeUp() }
+        app.buttons["open-block-Doomscroll guard"].tap()
         XCTAssertTrue(app.textFields["Block name"].waitForExistence(timeout: 5))
         app.swipeUp()
         app.buttons["usage-duration"].tap()
@@ -35,8 +36,9 @@ final class DurationTests: XCTestCase {
         app.launchEnvironment.removeValue(forKey: "BLOCK_SEED_DEMO_STATE")
         app.launch()
         XCTAssertTrue(app.navigationBars["Focus"].waitForExistence(timeout: 5))
-        for _ in 0..<6 where !app.staticTexts["Doomscroll guard"].exists { app.swipeUp() }
-        app.staticTexts["Doomscroll guard"].tap()
+        for _ in 0..<6 where !app.buttons["open-block-Doomscroll guard"].isHittable { app.swipeUp() }
+        for _ in 0..<7 where !app.buttons["open-block-Doomscroll guard"].isHittable { app.swipeUp() }
+        app.buttons["open-block-Doomscroll guard"].tap()
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["00:05"].exists)
         XCTAssertTrue(app.staticTexts["23:55"].exists)

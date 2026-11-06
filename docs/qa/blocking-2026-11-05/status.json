@@ -1,0 +1,62 @@
+{
+  "phase": "QA + usability pass; release held for updated UI and OS checks",
+  "verdict": "INVESTIGATING \u2014 device failure not yet explained",
+  "notion": "https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384",
+  "rows": [
+    [
+      "PASS",
+      "2.3 (9) baseline",
+      "32 callback/lifecycle checks \u00b7 OS doubles"
+    ],
+    [
+      "PASS",
+      "2.4 (3) baseline",
+      "32 callback/lifecycle checks \u00b7 OS doubles"
+    ],
+    [
+      "PASS",
+      "Schedule recovery",
+      "10 manager + 7 ownership checks; production logic / OS doubles"
+    ],
+    [
+      "PASS (LOGIC)",
+      "Activation + recovery",
+      "6 activation + 6 usage-manager checks"
+    ],
+    [
+      "FIXED / TESTING",
+      "Shield failure reporting",
+      "3 hidden-error cases reproduced; 16 actuator checks pass"
+    ],
+    [
+      "PASS (LOGIC)",
+      "Callback + capacity",
+      "895 checks; 20-slot lockout repaired; physical store limit unverified"
+    ],
+    [
+      "RETESTING",
+      "iOS 17.5 / iPhone 15 Pro",
+      "SwiftUI layout loop sampled; diagnostic layout simplified"
+    ],
+    [
+      "RUNNING",
+      "iOS 26.2 / 26.5",
+      "26.2: 2 pass, 2 test-selector failures; corrections being verified"
+    ],
+    [
+      "PASS / QUEUED",
+      "iOS 27.0 / 27.1",
+      "27.0 permission alert + diagnostics passed; latest UI changes need retest"
+    ],
+    [
+      "IN REVIEW",
+      "Usability + state machines",
+      "Notion proposals saved; active actions and manual duration clarified"
+    ],
+    [
+      "PENDING",
+      "Physical device acceptance",
+      "iPhone 15 Pro unavailable; iOS version not supplied"
+    ]
+  ]
+}

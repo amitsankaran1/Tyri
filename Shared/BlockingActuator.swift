@@ -85,6 +85,8 @@ enum BlockingActuator {
     ///   clears) the categories store, to isolate whether a `.specific` categories
     ///   shield suppresses sibling stores' app shields on device.
     static func apply(tokens: BlockResolution.Tokens, blockID: UUID, includeCategories: Bool = true) {
+        let overCapacity = tokens.apps.count > maxChunksPerBlock * tokensPerStore || tokens.webDomains.count > maxChunksPerBlock * tokensPerStore
+        let empty = tokens.apps.isEmpty && tokens.categories.isEmpty && tokens.webDomains.isEmpty && tokens.domains.isEmpty
         var appChunks = chunks(tokens.apps, size: tokensPerStore)
         var webChunks = chunks(tokens.webDomains, size: tokensPerStore)
         if appChunks.count > maxChunksPerBlock || webChunks.count > maxChunksPerBlock {
@@ -118,12 +120,19 @@ enum BlockingActuator {
         }
         SharedDefaults.suite.set(newCount, forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID))
 
-        auditApply(blockID: blockID, appChunks: appChunks, webChunks: webChunks,
-                   expectedCategories: includeCategories ? tokens.categories.count : 0)
+        let matched = auditApply(blockID: blockID, appChunks: appChunks, webChunks: webChunks,
+                   expectedCategories: includeCategories ? tokens.categories : [], expectedDomains: tokens.domains)
+        EnforcementDiagnostics.record("shield", blockID: blockID, detail: matched ? "Settings readback matched; effective shielding still requires a device check" : "Settings readback MISMATCH")
+        let error: String? = empty ? "This block has no apps or websites to block. Check its lists."
+            : overCapacity ? "This selection is too large to block completely. Reduce the number of selected apps or websites."
+            : !matched ? "iOS did not retain all blocking settings. Check Screen Time access and reselect the affected apps."
+            : nil
+        if let error { SharedDefaults.suite.set(error, forKey: SharedDefaults.Keys.shieldError(blockID: blockID)) }
+        else { SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldError(blockID: blockID)) }
     }
 
     /// Read every store back and persist a summary; print loudly on mismatch.
-    private static func auditApply(blockID: UUID, appChunks: [Set<ApplicationToken>], webChunks: [Set<WebDomainToken>], expectedCategories: Int) {
+    private static func auditApply(blockID: UUID, appChunks: [Set<ApplicationToken>], webChunks: [Set<WebDomainToken>], expectedCategories: Set<ActivityCategoryToken>, expectedDomains: Set<String>) -> Bool {
         let newCount = max(1, appChunks.count, webChunks.count)
         var parts: [String] = []
         var mismatch = false
@@ -133,24 +142,31 @@ enum BlockingActuator {
             let expWeb = i < webChunks.count ? webChunks[i].count : 0
             let gotApps = store.shield.applications?.count ?? 0
             let gotWeb = store.shield.webDomains?.count ?? 0
-            if gotApps != expApps || gotWeb != expWeb { mismatch = true }
+            if (store.shield.applications ?? []) != (i < appChunks.count ? appChunks[i] : []) || (store.shield.webDomains ?? []) != (i < webChunks.count ? webChunks[i] : []) { mismatch = true }
             parts.append("chunk\(i) apps \(gotApps)/\(expApps) web \(gotWeb)/\(expWeb)")
         }
         let gotCategories: Int
         switch ManagedSettingsStore(named: categoriesStoreName(for: blockID)).shield.applicationCategories {
-        case .specific(let set, _): gotCategories = set.count
+        case .specific(let set, _):
+            gotCategories = set.count
+            if set != expectedCategories { mismatch = true }
         case .all:                  gotCategories = -1 // "all" — never written by us
         case nil:                   gotCategories = 0
         default:                    gotCategories = -2
         }
-        if gotCategories != expectedCategories { mismatch = true }
-        parts.append("cats \(gotCategories)/\(expectedCategories)")
+        if gotCategories != expectedCategories.count { mismatch = true }
+        parts.append("cats \(gotCategories)/\(expectedCategories.count)")
+        let filter = ManagedSettingsStore(named: appsStoreName(for: blockID)).webContent.blockedByFilter
+        let expectedFilter: WebContentSettings.FilterPolicy? = expectedDomains.isEmpty ? nil : .specific(Set(expectedDomains.map { WebDomain(domain: $0) }))
+        if filter != expectedFilter { mismatch = true }
+        parts.append("typed domains \(filter == expectedFilter ? "matched" : "MISMATCH")")
 
         let summary = (mismatch ? "MISMATCH · " : "") + parts.joined(separator: " · ")
         SharedDefaults.suite.set(summary, forKey: SharedDefaults.Keys.shieldAudit(blockID: blockID))
         if mismatch {
             print("⚠️ BlockingActuator: shield readback mismatch for \(blockID): \(summary)")
         }
+        return !mismatch
     }
 
     /// Current readback of every store the block occupies (debug inspector).
@@ -180,6 +196,7 @@ enum BlockingActuator {
         }
         ManagedSettingsStore(named: categoriesStoreName(for: blockID)).clearAllSettings()
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID))
+        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldError(blockID: blockID))
     }
 
     // MARK: - Helpers

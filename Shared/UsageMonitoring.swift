@@ -41,7 +41,7 @@ enum UsageMonitoring {
     static var allDaySchedule: DeviceActivitySchedule {
         DeviceActivitySchedule(
             intervalStart: DateComponents(hour: 0, minute: 0),
-            intervalEnd: DateComponents(hour: 23, minute: 59),
+            intervalEnd: DateComponents(hour: 23, minute: 59, second: 59),
             repeats: true
         )
     }
@@ -110,6 +110,7 @@ enum UsageMonitoring {
             if reportsProgress { UsageProgress.record(0, blockID: block.id, reset: true) }
             else { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
             center.stopMonitoring(oldActivities)
+            EnforcementDiagnostics.record("registration", blockID: block.id, detail: "Registered allowance; progress events: \(reportsProgress)")
             log.notice("Registered allowance \(activity.rawValue, privacy: .public)")
             SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: block.id))
             return true
@@ -118,6 +119,7 @@ enum UsageMonitoring {
             else { SharedDefaults.suite.removeObject(forKey: key) }
             SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",
                                      forKey: SharedDefaults.Keys.usageError(blockID: block.id))
+            EnforcementDiagnostics.record("registration", blockID: block.id, detail: "FAILED: \(error.localizedDescription)")
             log.error("Allowance registration failed: \(error.localizedDescription, privacy: .public)")
             print("❌ startUsageMonitor failed for \(block.id): \(error)")
             return false
@@ -161,6 +163,9 @@ enum UsageMonitoring {
         log.notice("Lock started \(blockID.uuidString, privacy: .public), expires \(end.timeIntervalSince1970)")
         BlockingActuator.start(blockID: blockID, bypassWeekday: true, setRunningFlag: false)
 
+        // The consumed allowance no longer needs an activity slot. Release it
+        // after shielding, before registering expiry (iOS allows 20 activities).
+        stopUsageMonitor(for: blockID)
         registerLockout(blockID: blockID, end: end, now: now)
     }
 

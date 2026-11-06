@@ -53,6 +53,7 @@ struct SettingsView: View {
             }
             Section {
                 LabeledContent("Version", value: version)
+                NavigationLink("Blocking diagnostics") { BlockingDiagnosticsView() }
             }
             #if DEBUG
             Section("Developer") {

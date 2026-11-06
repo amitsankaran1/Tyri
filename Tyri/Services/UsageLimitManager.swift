@@ -39,11 +39,20 @@ class UsageLimitManager: ObservableObject {
     ///   (launch), leave an already-running monitor untouched so the day's
     ///   accumulated usage isn't wiped just by reopening the app.
     func applyUsageLimit(for block: BlockRule, forceReset: Bool = true) {
+        // A live lock owns the cycle until expiry. Reopening must not arm a
+        // second allowance or consume its activity slot while apps are blocked.
+        if block.type == .timer, lockEnd(for: block.id) != nil {
+            UsageMonitoring.reconcileLockout(blockID: block.id)
+            return
+        }
         let active = UsageMonitoring.isUsageMonitorActive(for: block.id)
 
         // Nothing to monitor (not a timer / limit off / empty groups): stop if running.
         guard UsageMonitoring.usageEvent(for: block, groups: groups) != nil else {
             if active { UsageMonitoring.stopUsageMonitor(for: block.id) }
+            if block.type == .timer {
+                defaults.set("No measurable apps selected. Open Lists and select apps, categories or websites in the Screen Time picker. Typed website addresses alone cannot measure usage.", forKey: SharedDefaults.Keys.usageError(blockID: block.id))
+            }
             return
         }
 

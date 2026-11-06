@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import FamilyControls
 
 struct BlockEditorView: View {
     let blockID: UUID
@@ -21,6 +22,7 @@ struct BlockEditorView: View {
     @StateObject private var breakManager = BreakManager.shared
     @Environment(\.dismiss) private var dismiss
 
+    @State private var validationError: String?
     @State private var name = ""
     @State private var type: BlockType = .schedule
     @State private var groupIDs: Set<UUID> = []
@@ -54,6 +56,25 @@ struct BlockEditorView: View {
                     }
                 }.listRowBackground(Color.clear)
             }
+            if isActive {
+                Section {
+                    breakActionRow
+                    if storedCooldownMinutes == 0 {
+                        Label(noCooldownExplainer, systemImage: "lock.fill")
+                            .font(.system(.caption, design: .default))
+                            .foregroundColor(Color.secondary)
+                    } else {
+                        Button { showCooldown = true } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "hourglass")
+                                Text("Stop early…")
+                            }
+                            .foregroundColor(Color.orange)
+                        }
+                    }
+                }
+            }
+
             if let block = storedBlock, let error = schedulingManager.registrationErrors[block.id] {
                 Section { ScheduleRegistrationWarning(block: block, message: error) }
             }
@@ -108,28 +129,18 @@ struct BlockEditorView: View {
             typeConfigSection
             flexibilitySection
 
-            if isActive {
-                Section {
-                    breakActionRow
-                    if storedCooldownMinutes == 0 {
-                        Label(noCooldownExplainer, systemImage: "lock.fill")
-                            .font(.system(.caption, design: .default))
-                            .foregroundColor(Color.secondary)
-                    } else {
-                        Button { showCooldown = true } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "hourglass")
-                                Text("Stop early…")
-                            }
-                            .foregroundColor(Color.orange)
-                        }
-                    }
-                }
-            } else {
+            if !isActive {
                 Section("Manual") {
                     Toggle("Block now", isOn: $isEnabled).tint(Color.accentColor)
+                    Text("Starts when you tap Save. This manual block stays on beyond any schedule or usage timer. Your Stop early setting applies.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if isEnabled && cooldownMinutes == 0 {
+                        Text("With Stop early set to Not allowed, this manual block has no automatic end.")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                 }
             }
+
 
             if newBlock == nil {
                 Section {
@@ -140,6 +151,11 @@ struct BlockEditorView: View {
                     }
                 }
             }
+        }
+        .alert("Couldn’t start blocking", isPresented: Binding(get: { validationError != nil }, set: { if !$0 { validationError = nil } })) {
+            Button("OK", role: .cancel) { validationError = nil }
+        } message: {
+            Text(validationError ?? "")
         }
         .navigationTitle(newBlock == nil ? "Block details" : "New block")
         .navigationBarTitleDisplayMode(.inline)
@@ -338,6 +354,13 @@ struct BlockEditorView: View {
     private func save() {
         guard hasLoaded, var block = blockStore.block(id: blockID) ?? newBlock else { finish(); return }
 
+        screenTimeManager.checkAuthorizationStatus()
+        guard !isEnabled || screenTimeManager.authorizationStatus == .approved else {
+            validationError = "Allow Screen Time access in Settings before using Block now."
+            return
+        }
+        validationError = nil
+
         // Defense-in-depth: while the block is active, only strengthening edits
         // survive, even if the UI locks were somehow bypassed (stale state, a
         // block going active while the editor was open, ...).
@@ -368,9 +391,27 @@ struct BlockEditorView: View {
         block.schedule = (type == .schedule) ? schedule : nil
         block.usageLimitMinutes = (type == .timer) ? usageLimitMinutes : nil
         block.usageLockMinutes = usageLockMinutes
+        let targets = BlockResolution.tokens(for: block, groups: groupStore.groups)
+        guard !isEnabled || !targets.isEmpty || !targets.domains.isEmpty else {
+            validationError = "Choose apps or websites in this block's lists before using Block now."
+            return
+        }
         if blockStore.block(id: blockID) == nil { blockStore.insert(block) }
         else { blockStore.update(block) }
         blockStore.flush()
+
+        // Manual on/off + live-shield refresh.
+        if isEnabled {
+            // A fresh manual activation re-arms the one-break allowance.
+            if !wasActive { BreakMonitoring.resetAllowance(blockID: block.id) }
+            screenTimeManager.applyBlockShield(block)
+        } else {
+            // Only clear if nothing else is keeping it up.
+            let running = SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID))
+            let locked = usageLimitManager.lockEnd(for: blockID) != nil
+            if !running && !locked { screenTimeManager.clearBlockShield(id: blockID) }
+            else { screenTimeManager.updateBlockShieldIfActive(block) }
+        }
 
         // (Re)register monitors for the (possibly changed) type. Skip when nothing
         // the monitor depends on changed and the block is mid-run: applySchedule
@@ -396,18 +437,6 @@ struct BlockEditorView: View {
         case .tag:      break
         }
 
-        // Manual on/off + live-shield refresh.
-        if isEnabled {
-            // A fresh manual activation re-arms the one-break allowance.
-            if !wasActive { BreakMonitoring.resetAllowance(blockID: block.id) }
-            screenTimeManager.applyBlockShield(block)
-        } else {
-            // Only clear if nothing else is keeping it up.
-            let running = SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID))
-            let locked = usageLimitManager.lockEnd(for: blockID) != nil
-            if !running && !locked { screenTimeManager.clearBlockShield(id: blockID) }
-            else { screenTimeManager.updateBlockShieldIfActive(block) }
-        }
         if schedulingManager.registrationErrors[block.id] == nil { finish() }
     }
 

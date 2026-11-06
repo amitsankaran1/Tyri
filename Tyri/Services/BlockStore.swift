@@ -68,6 +68,10 @@ class BlockStore: ObservableObject {
         defaults.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: id))
         defaults.removeObject(forKey: SharedDefaults.Keys.usageGeneration(blockID: id))
         defaults.removeObject(forKey: UsageProgress.key(id))
+        defaults.removeObject(forKey: SharedDefaults.Keys.shieldError(blockID: id))
+        for event in EnforcementDiagnostics.events {
+            defaults.removeObject(forKey: EnforcementDiagnostics.key(event, id))
+        }
     }
 
     func setEnabled(id: UUID, enabled: Bool) {

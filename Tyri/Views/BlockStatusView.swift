@@ -20,7 +20,7 @@ struct BlockStatusPresentation {
         case .paused: return "On a break"
         case .off: return "Blocking off"
         case .setup: return "Screen Time access needed"
-        case .unavailable: return "Tracking unavailable"
+        case .unavailable: return "Blocking needs attention"
         }
     }
     var color: Color {
@@ -59,6 +59,10 @@ struct BlockStatusPresentation {
         }
         if BreakMonitoring.isOnBreak(blockID: block.id) {
             return Self(state: .paused, detail: "Blocking resumes automatically.", end: BreakMonitoring.breakEnd(blockID: block.id))
+        }
+        if ScreenTimeManager.shared.isBlockActive(block),
+           let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldError(blockID: block.id)) {
+            return Self(state: .unavailable, detail: error)
         }
         if ScreenTimeManager.shared.isBlockActive(block) {
             let timedEnd = UsageLimitManager.shared.lockEnd(for: block.id) ?? block.schedule?.activeWindow()?.end

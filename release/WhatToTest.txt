@@ -1,11 +1,13 @@
-Tyri 2.4 (3): Flexible duration timers and Focus progress.
+2.4 (4) — Blocking reliability candidate
 
-- Both Allow usage for and Then block for use the same duration picker: 00:05 to 23:55 in five-minute steps.
-- Confirm Cancel preserves the old duration and saved choices survive reopening.
-- Try a five-minute allowance followed by a five-minute block. Verify blocking starts and releases with Tyri closed, then repeat the cycle.
-- Focus shows the latest usage reported by iOS and blocked time counting upward. Usage updates are periodic, not a continuous stopwatch.
-- Check a longer lock spanning midnight. Unused allowance still resets at midnight.
-- Existing lists, schedules, NFC settings and active-block restrictions should survive this update.
-- Report settings, exact times and whether Tyri was open if a timer ends early or fails to repeat.
+Fixes foreground recovery of missing usage/schedule monitors, applies Block now before monitor registration, frees a consumed usage-monitor slot before lockout registration, and reports incomplete/empty shield settings. Permission failures now show an alert. Settings > Blocking diagnostics captures on-device monitor and shield-setting evidence.
 
-AI block creation and list onboarding are deferred to a later build.
+Please test individual apps and mixed app/category lists on the affected iPhone 15 Pro:
+1. Block now + Save: immediately open each selected app.
+2. Schedule starts while Tyri is closed; confirm every selected app is blocked.
+3. Reach a short usage allowance; check lockout, expiry and a second cycle.
+4. Close/reopen Tyri mid-allowance and mid-lockout; neither should reset.
+5. Overlapping blocks and breaks: ending one must preserve another active block.
+If anything fails, immediately share Blocking diagnostics and include iOS version, block/list names and the app that remained accessible.
+
+Automated logic and simulator checks do not prove physical Screen Time enforcement. This candidate fixes reproduced code defects; the reported device failure still requires acceptance testing. AI/NL features remain deferred.

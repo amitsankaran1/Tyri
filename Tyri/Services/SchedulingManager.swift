@@ -99,6 +99,16 @@ class SchedulingManager: ObservableObject {
         refresh()
     }
 
+    /// Foreground repair preserves healthy registrations and their current windows.
+    func repairMissingSchedules() {
+        for block in BlockStore.shared.blocks where block.type == .schedule && block.schedule != nil {
+            if !center.activities.contains(Self.activityName(for: block.id)) || registrationErrors[block.id] != nil {
+                applySchedule(for: block)
+            }
+        }
+        refresh()
+    }
+
     /// Repair missing/delayed callbacks before publishing current schedule state.
     func refresh() {
         var ids: Set<UUID> = []

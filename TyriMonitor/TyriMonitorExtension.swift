@@ -39,6 +39,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         log.notice("Interval start \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
+        EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval start: \(activity.rawValue)")
         switch kind {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
@@ -56,6 +57,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         log.notice("Interval end \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
+        EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval end: \(activity.rawValue)")
         switch kind {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
@@ -75,6 +77,8 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         super.eventDidReachThreshold(event, activity: activity)
         log.notice("Threshold \(activity.rawValue, privacy: .public), event \(event.rawValue, privacy: .public)")
         guard let (kind, blockID) = Self.parse(activity), kind == .usage else { return }
+
+        EnforcementDiagnostics.record("threshold", blockID: blockID, detail: "Received \(event.rawValue); current generation match: \(activity == UsageMonitoring.usageActivityName(for: blockID)); monitor registered: \(DeviceActivityCenter().activities.contains(activity))")
 
         // Shield immediately, then register the timed lockout so it auto-releases.
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,

@@ -4,11 +4,15 @@ protocol ObservableObject {}
 struct DeviceActivityName: Hashable { var rawValue: String }
 struct DeviceActivitySchedule {}
 struct DeviceActivityCenter {
+    static var registered: Set<DeviceActivityName> = []
+    static var starts = 0
+    var activities: [DeviceActivityName] { Array(Self.registered) }
     static var failNext = false
     func startMonitoring(_ name: DeviceActivityName, during: DeviceActivitySchedule) throws {
         if Self.failNext { Self.failNext = false; throw NSError(domain: "QA", code: 1) }
+        Self.starts += 1; Self.registered.insert(name)
     }
-    func stopMonitoring(_ names: [DeviceActivityName]) {}
+    func stopMonitoring(_ names: [DeviceActivityName]) { for n in names { Self.registered.remove(n) } }
 }
 struct BlockingSchedule {
     enum CrossingSegment { case full, early, late }
@@ -50,6 +54,13 @@ enum ScheduleEnforcement { static func reconcile(block: BlockRule) {} }
         precondition(!manager.applySchedule(for: first))
         manager.removeSchedule(for: first)
         precondition(manager.registrationErrors[first.id] == nil)
-        print("8 schedule error checks passed against production manager with OS doubles")
+        BlockStore.shared.blocks = [first, second]
+        DeviceActivityCenter.registered = []
+        manager.repairMissingSchedules()
+        precondition(DeviceActivityCenter.registered.count == 2)
+        let starts = DeviceActivityCenter.starts
+        manager.repairMissingSchedules()
+        precondition(DeviceActivityCenter.starts == starts, "Healthy schedules must not reset on foreground")
+        print("10 schedule error/recovery checks passed against production manager with OS doubles")
     }
 }
