@@ -40,6 +40,25 @@ All fixes below are implemented in this checkout. Verification status is maintai
 | **SM-05: Make migration retryable and preserve ownership** | P1: duplicate lists/rules or silent release on upgrade | Migration assigned random IDs and appended. Kill between group write, block write, and completion marker → retry duplicates. Legacy `isEnabled` was not decoded. Decode failure still marked migration complete and removed source. | Stable namespaced IDs and insert-if-missing; preserve enabled state; decode before mutation; retain unreadable input; move teardown after replacement persistence. `MigrationStateQA`: four failures before, four passes after. Corrupt-input check is defensive; interrupted valid writes and loss of legacy enabled state are confirmed paths. |
 | **SM-06: Derive edit protection from calendar ownership** | P1: weakening/deletion before a delayed start callback; P2: expired rule stays edit-locked | `isBlockActive` trusted `running`. During a current window with delayed callback it returned false, allowing edit/delete guards to pass; after a missed end it returned true indefinitely until reconciliation. | Compute current window and release marker directly; retain independent manual/usage ownership. `MutationStateQA`: both boundary failures reproduced and fixed. |
 
+### SM-07: Actionable enforcement warnings (follow-up, 2.4 (7))
+
+**P2, confirmed presentation gap.** User reports a saved block saying “Needs attention” without instructions. In 2.4 (6), `HomeView.overview` gave a generic instruction to open a block, and `BlockEditorView` only offered a dedicated recovery action for schedule-registration errors. Usage/shield warnings could show raw detail with no recovery button; schedule and lock-end errors were split into separate Home banners.
+
+Fix: a named attention section near the top of Focus; explicit “View recovery steps” affordance; a “What to do” section in block details with cause-specific instructions, direct list navigation, Retry blocking, Screen Time settings and diagnostics. Schedule/lock-end/usage errors participate in the same presentation. The shared retry service uses `forceReset: false`, so a healthy allowance survives retry. Temporary-session errors also appear in the Focus overview. Existing active-block edit protections are unchanged.
+
+Evidence: `Tests/RecoveryActionQA/run.py` passes five production retry contracts (preserve allowance, denied permission, stale/deleted rule, schedule repair, tag isolation). Eight production presentation checks also pass (permission precedence, active shield/usage/end errors with empty-message fallbacks, schedule errors, break state, missing monitor). All five blocking UI flows pass on the iPhone 15 Pro / iOS 26.5 simulator; attention, recovery and linked-list screenshots were visually inspected, with the first two recorded in Notion. The added iOS 27 retry/permission-navigation check initially failed: UIKit logged competing presentation attempts when `.sheet` was attached to the recovery Section. Moved sheet state and presentation to the stable BlockEditorView host; the exact regression now passes (1/1, 24.0 seconds), reaching Allow Screen Time access after Retry. This was caught during implementation, before release. This fixes the recovery UI, not an unobserved physical-device failure; the exact error on the user's phone has not yet been supplied.
+
+Recovery invariants: warnings expose an actionable next step; an empty error string still produces explanatory text; retry reads the current saved rule under the enforcement lease; deleted rules and denied authorization do not mutate enforcement; retry cannot reset a healthy usage allowance. A retry attempt does not assert success: status is re-read from persisted/OS state.
+
+| State / trigger | Guard / transition | Next presentation |
+|---|---|---|
+| Missing permission → open recovery | Open Settings; grant occurs through system authorization | Remains setup until authorization is approved |
+| Error or missing monitor → open block | Read saved lists and actual tokens | Cause-specific instructions and recovery actions |
+| Retry → current timer rule | Approved + lease acquired; apply with `forceReset: false` | Re-read actual status; warning remains if repair failed |
+| Retry → current schedule rule | Approved + lease acquired; register schedule and reconcile | Re-read actual status |
+| Retry → deleted rule / denied permission / unavailable lease | Reject mutation | Settings opens; no false success claim |
+| Edit list → save → return | Existing active-edit guards still apply | Updated selection and recovery state |
+
 Related fixes remain grouped rather than filing one issue per failed assertion. Duplicate direct calls to `startBreak` are also rejected, but the public manager already checked the allowance; those two tests are defensive hardening, not separate confirmed user bugs.
 
 ## Machine 1: Saved rule and manual activation

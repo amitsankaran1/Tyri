@@ -57,12 +57,22 @@ struct BlockStatusPresentation {
         guard canDisplayActivity else {
             return Self(state: .setup, detail: "Allow access in Settings to start this block.")
         }
-        if BreakMonitoring.isOnBreak(blockID: block.id) {
-            return Self(state: .paused, detail: "Blocking resumes automatically.", end: BreakMonitoring.breakEnd(blockID: block.id))
-        }
         if ScreenTimeManager.shared.isBlockActive(block),
            let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldError(blockID: block.id)) {
-            return Self(state: .unavailable, detail: error)
+            return Self(state: .unavailable, detail: error.isEmpty ? "iOS did not confirm this block. Follow the recovery steps below." : error)
+        }
+        if let error = SchedulingManager.shared.registrationErrors[block.id] {
+            return Self(state: .unavailable, detail: error.isEmpty ? "Automatic schedule registration failed." : error)
+        }
+        if let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: block.id)) {
+            return Self(state: .unavailable, detail: error.isEmpty ? "The automatic end could not be registered." : error)
+        }
+        if block.type == .timer,
+           let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) {
+            return Self(state: .unavailable, detail: error.isEmpty ? "Usage tracking could not start. Follow the recovery steps below." : error)
+        }
+        if BreakMonitoring.isOnBreak(blockID: block.id) {
+            return Self(state: .paused, detail: "Blocking resumes automatically.", end: BreakMonitoring.breakEnd(blockID: block.id))
         }
         if ScreenTimeManager.shared.isBlockActive(block) {
             let timedEnd = UsageLimitManager.shared.lockEnd(for: block.id) ?? block.schedule?.activeWindow()?.end
@@ -78,9 +88,6 @@ struct BlockStatusPresentation {
                         lockStart: lockEnd?.addingTimeInterval(-Double(block.usageLockMinutes * 60)), lockEnd: lockEnd)
         }
         if block.type == .timer {
-            if let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) {
-                return Self(state: .unavailable, detail: error)
-            }
             guard UsageMonitoring.isUsageMonitorActive(for: block.id) else {
                 return Self(state: .unavailable, detail: "Open this block to check its app lists and save to retry.")
             }
@@ -98,6 +105,11 @@ struct BlockStatusPresentation {
 
     private static func reviewStatus(for block: BlockRule) -> Self? {
         guard let scenario = reviewScenario else { return nil }
+        if scenario == "attention" {
+            return block.type == .timer
+                ? Self(state: .unavailable, detail: "Usage tracking is not registered.")
+                : Self(state: .off, detail: "Ready when you need it")
+        }
         if block.type == .timer && scenario != "off" {
             if scenario == "locked" {
                 return Self(state: .blocking, detail: BlockingEndDescription.detail(timedEnd: reviewStart.addingTimeInterval(10680), manual: false, tag: false), end: reviewStart.addingTimeInterval(10680), lockStart: reviewStart.addingTimeInterval(-120), lockEnd: reviewStart.addingTimeInterval(10680))

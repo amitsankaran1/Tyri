@@ -1,8 +1,23 @@
 {
-  "phase": "State-machine audit complete \u00b7 2.4 (6) in internal TestFlight",
-  "verdict": "READY \u2014 physical-device acceptance remains open",
+  "phase": "Actionable warning fix \u00b7 preparing 2.4 (7)",
+  "verdict": "PASS \u2014 recovery checks; packaging 2.4 (7)",
   "notion": "https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384",
   "rows": [
+    [
+      "FIXED",
+      "SM-07: actionable warnings",
+      "Named block, cause-specific steps, list link, safe retry"
+    ],
+    [
+      "PASS",
+      "Recovery regression tests",
+      "5 retry + 8 presentation; 5/5 iOS 26.5 UI"
+    ],
+    [
+      "PASS",
+      "iOS 27 retry \u2192 Settings",
+      "Sheet conflict fixed; list editing and permission recovery verified"
+    ],
     [
       "DOCUMENTED",
       "15 state-machine areas",

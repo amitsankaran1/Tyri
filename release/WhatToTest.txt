@@ -1,13 +1,7 @@
-2.4 (6) — State-machine reliability fixes
+2.4 (7) — Actionable blocking warnings
 
-Fixes races between foreground actions and background callbacks, stale usage monitors after list deletion, timer rearming after emergency release, lost break/session expiry registration, duplicate NFC callbacks, interrupted migration retries, and schedule edit protection before delayed callbacks. Temporary sessions now show enforcement errors. Manual Block now remains indefinite; AI/NL features remain deferred.
+Blocks that need attention now appear in a dedicated section near the top of Focus. Open the named block for a What to do section with cause-specific instructions, direct links to its app lists, Retry blocking, Screen Time settings and diagnostics. Schedule, automatic-end and usage-tracking errors are included. Retrying preserves healthy usage allowances.
 
-Please test on the affected iPhone 15 Pro with individual-app and mixed lists:
-1. Start a schedule or usage lock while Tyri is closed, then reopen and close it repeatedly. The original end time should stay fixed.
-2. Complete two usage allowance/lockout cycles. Emergency release must allow the next usage cycle to start.
-3. Take a break; close Tyri and confirm protection resumes on time. End one overlapping block and confirm the other remains effective.
-4. Delete an inactive list used by a usage rule; its apps should no longer count toward that rule.
-5. Scan/cancel/retry an NFC scan; a successful scan should toggle once.
-6. Start Block for a while; confirm automatic end and the five-minute early-release wait.
+Please check the block that previously showed Needs attention without instructions. Follow its recovery steps and confirm whether blocking or tracking resumes. If the warning persists, open Blocking diagnostics from the same screen and share the report with the iOS version and affected block/app names.
 
-If anything fails, share Settings > Blocking diagnostics immediately, including iOS version, list/block names, and the app that stayed accessible. Automated logic and simulator checks do not prove physical Screen Time enforcement; the original device incident still needs acceptance testing.
+This build retains the state-machine reliability fixes from 2.4 (6). Real-device Screen Time enforcement still requires acceptance testing. AI/NL features remain deferred.

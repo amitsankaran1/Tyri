@@ -54,6 +54,30 @@ import XCTest
         XCTAssertTrue(app.otherElements["temporary-session-error"].exists || app.staticTexts["temporary-session-error"].exists)
         capture("temporary-session-error-empty-token-fixture")
     }
+    func testNeedsAttentionProvidesRecoveryAndListLink() {
+        app.terminate()
+        app.launchEnvironment["TYRI_UI_REVIEW"] = "attention"
+        app.launch()
+        let row = app.buttons["open-block-Doomscroll guard"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["View recovery steps"].exists)
+        capture("attention-home-presentation-fixture")
+        row.tap()
+        let instructions = app.staticTexts["block-recovery-instructions"]
+        XCTAssertTrue(instructions.waitForExistence(timeout: 5))
+        XCTAssertTrue(instructions.label.contains("Select apps"))
+        XCTAssertTrue(app.buttons["Retry blocking"].exists)
+        capture("attention-recovery-empty-selection-fixture")
+        app.buttons["Edit Social media"].tap()
+        XCTAssertTrue(app.navigationBars["List details"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Select apps"].exists)
+        capture("attention-linked-list-fixture")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Retry blocking"].waitForExistence(timeout: 5))
+        app.buttons["Retry blocking"].tap()
+        XCTAssertTrue(app.buttons["Allow Screen Time access"].waitForExistence(timeout: 5))
+        capture("attention-retry-permission-recovery-simulator")
+    }
     func testDiagnosticsAvailableWithoutDebugMenu() {
         app.buttons["Settings"].tap()
         app.buttons["Blocking diagnostics"].tap()

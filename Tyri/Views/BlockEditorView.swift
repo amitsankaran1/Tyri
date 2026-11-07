@@ -22,6 +22,8 @@ struct BlockEditorView: View {
     @StateObject private var breakManager = BreakManager.shared
     @Environment(\.dismiss) private var dismiss
 
+    @State private var recoveryRevision = 0
+    @State private var showRecoverySettings = false
     @State private var validationError: String?
     @State private var name = ""
     @State private var type: BlockType = .schedule
@@ -46,6 +48,7 @@ struct BlockEditorView: View {
         Form {
             if let block = storedBlock {
                 Section {
+                    let _ = recoveryRevision
                     let presentation = BlockStatusPresentation.current(for: block)
                     BlockStatusCard(status: presentation)
                     if let start = presentation.lockStart, let end = presentation.lockEnd {
@@ -75,8 +78,10 @@ struct BlockEditorView: View {
                 }
             }
 
-            if let block = storedBlock, let error = schedulingManager.registrationErrors[block.id] {
-                Section { ScheduleRegistrationWarning(block: block, message: error) }
+            if let block = storedBlock,
+               [.setup, .unavailable].contains(BlockStatusPresentation.current(for: block).state) {
+                BlockRecoverySection(block: block, onRetry: { recoveryRevision += 1 },
+                                     openSettings: { showRecoverySettings = true })
             }
             if isActive {
                 Section {
@@ -168,6 +173,9 @@ struct BlockEditorView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish() } }
             ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || groupIDs.isEmpty) }
+        }
+        .sheet(isPresented: $showRecoverySettings, onDismiss: { recoveryRevision += 1 }) {
+            NavigationStack { SettingsView() }
         }
         .sheet(isPresented: $showCooldown) {
             CooldownView(blockID: blockID, isPresented: $showCooldown)
