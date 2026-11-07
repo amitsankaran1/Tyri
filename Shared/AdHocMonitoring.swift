@@ -30,6 +30,9 @@ enum AdHocMonitoring {
     }
 
     static func start(group: AppGroup, minutes: Int, now: Date = Date()) throws {
+        guard let transition = EnforcementTransaction.begin() else { throw SessionError.unavailable }
+        defer { transition.finish() }
+
         reconcile(now: now)
         guard session == nil, (15...1440).contains(minutes) else {
             throw SessionError.invalidDurationOrActive
@@ -49,16 +52,46 @@ enum AdHocMonitoring {
             finish(id: item.id)
             throw error
         }
+        // A reentrant completion or cancellation must never resurrect this owner.
+        guard session?.id == item.id else { return }
         BlockingActuator.apply(tokens: item.tokens, blockID: item.id)
     }
 
     static func reconcile(now: Date = Date()) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard let item = session else { return }
         if item.endsAt <= now { finish(id: item.id) }
-        else { BlockingActuator.apply(tokens: item.tokens, blockID: item.id) }
+        else {
+            if !DeviceActivityCenter().activities.contains(activityName(item.id)) {
+                let cal = Calendar.current
+                // Preserve the deadline. Short remaining windows use the warning
+                // callback, just like short usage lockouts and breaks.
+                let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
+                let monitorEnd = max(item.endsAt, start.addingTimeInterval(900))
+                let warning = Int(ceil(monitorEnd.timeIntervalSince(item.endsAt)))
+                let schedule = DeviceActivitySchedule(
+                    intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
+                    intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+                    repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
+                do {
+                    try DeviceActivityCenter().startMonitoring(activityName(item.id), during: schedule)
+                    SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
+                } catch {
+                    SharedDefaults.suite.set("Automatic end could not be restored. Open Tyri at the end of this session.",
+                                             forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
+                }
+            }
+            guard session?.id == item.id else { return }
+            BlockingActuator.apply(tokens: item.tokens, blockID: item.id)
+        }
     }
 
     static func requestRelease(now: Date = Date()) throws {
+        guard let transition = EnforcementTransaction.begin() else { throw SessionError.unavailable }
+        defer { transition.finish() }
+
         guard var item = session, item.endsAt > now, item.releaseAt == nil else { return }
         item.releaseAt = now.addingTimeInterval(300)
         try save(item)
@@ -66,22 +99,30 @@ enum AdHocMonitoring {
 
     /// Wait completion never silently releases. Requires an explicit tap.
     static func release(now: Date = Date()) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard let item = session, let releaseAt = item.releaseAt, releaseAt <= now else { return }
         finish(id: item.id)
     }
 
     static func finish(id: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard session?.id == id else { return }
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.adHocSession)
+        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: id))
         DeviceActivityCenter().stopMonitoring([activityName(id)])
         BlockingActuator.clearShields(blockID: id)
     }
 
     enum SessionError: LocalizedError {
-        case invalidDurationOrActive, emptyList
+        case invalidDurationOrActive, emptyList, unavailable
         var errorDescription: String? {
             switch self {
             case .invalidDurationOrActive: return "Choose 15 minutes to 24 hours, and finish your current session first."
+            case .unavailable: return "Blocking state is unavailable. Please reopen Tyri and retry."
             case .emptyList: return "This list has no apps or websites. Add some in Lists first."
             }
         }

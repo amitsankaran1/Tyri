@@ -1,0 +1,48 @@
+{
+  "version": "2.4",
+  "build": "7",
+  "sourceCommit": "068d1904e719d3daca4d50ef91c719f232e85ca0",
+  "sha256": "7305f7aa9de55521826127f19ab09a1819c6e44db0a643964c41a69d845d851b",
+  "products": [
+    {
+      "bundle": "name.amitsankaran.Block",
+      "version": "2.4",
+      "build": "7",
+      "signatureVerified": true,
+      "profileExpiration": "2027-11-04 02:27:49",
+      "FamilyControls": true,
+      "appGroupVerified": true,
+      "AIExcluded": true
+    },
+    {
+      "bundle": "name.amitsankaran.Block.BlockMonitor",
+      "version": "2.4",
+      "build": "7",
+      "signatureVerified": true,
+      "profileExpiration": "2027-11-04 02:27:49",
+      "FamilyControls": true,
+      "appGroupVerified": true,
+      "AIExcluded": true
+    }
+  ],
+  "uploaded": true,
+  "physicalScreenTimeTested": false,
+  "legacyIOS175Verified": false,
+  "releaseBranch": "fix/blocking-reliability",
+  "deferredAICommit": "51cca9b",
+  "deliveryUUID": "f5039c6d-ec9a-4817-8130-ef1f704becf8",
+  "uploadLog": "/private/tmp/tyri-2.4-7-upload.log",
+  "uploadErrors": [],
+  "uploadWarnings": [],
+  "processingState": "VALID",
+  "uploadedAt": "2026-11-06T18:29:43-08:00",
+  "buildID": "f5039c6d-ec9a-4817-8130-ef1f704becf8",
+  "processingCompletionVerified": true,
+  "internalBuildState": "IN_BETA_TESTING",
+  "externalBuildState": "READY_FOR_BETA_SUBMISSION",
+  "testingNotesSaved": true,
+  "usesNonExemptEncryption": false,
+  "internalGroup": "Amit Internal",
+  "testerGroupAssignmentVerified": true,
+  "externalReviewSubmitted": false
+}

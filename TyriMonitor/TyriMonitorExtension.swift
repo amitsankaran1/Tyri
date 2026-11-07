@@ -35,10 +35,14 @@ class TyriMonitorExtension: DeviceActivityMonitor {
     }
 
     override func intervalDidStart(for activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.intervalDidStart(for: activity)
         log.notice("Interval start \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
+        EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval start: \(activity.rawValue)")
         switch kind {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
@@ -52,10 +56,14 @@ class TyriMonitorExtension: DeviceActivityMonitor {
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.intervalDidEnd(for: activity)
         log.notice("Interval end \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
+        EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval end: \(activity.rawValue)")
         switch kind {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
@@ -72,22 +80,38 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
     /// Cumulative usage crossed the block's budget — lock the whole block.
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.eventDidReachThreshold(event, activity: activity)
         log.notice("Threshold \(activity.rawValue, privacy: .public), event \(event.rawValue, privacy: .public)")
         guard let (kind, blockID) = Self.parse(activity), kind == .usage else { return }
 
+        EnforcementDiagnostics.record("threshold", blockID: blockID, detail: "Received \(event.rawValue); current generation match: \(activity == UsageMonitoring.usageActivityName(for: blockID)); monitor registered: \(DeviceActivityCenter().activities.contains(activity))")
+
         // Shield immediately, then register the timed lockout so it auto-releases.
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
-              event == UsageMonitoring.usageEventName,
               activity == UsageMonitoring.usageActivityName(for: blockID),
               DeviceActivityCenter().activities.contains(activity),
               (block.usageLimitMinutes ?? 0) > 0 else { return }
+        if event.rawValue.hasPrefix("progress."),
+           let minute = Int(event.rawValue.dropFirst("progress.".count)),
+           UsageProgress.milestones(for: block.usageLimitMinutes ?? 0).contains(minute) {
+            UsageProgress.record(minute, blockID: blockID)
+            return
+        }
+        guard event == UsageMonitoring.usageEventName else { return }
+        UsageProgress.record(block.usageLimitMinutes ?? 0, blockID: blockID)
         let lockMinutes = block.usageLockMinutes
         UsageMonitoring.startLockout(blockID: blockID, minutes: lockMinutes)
     }
 
     override func intervalWillEndWarning(for activity: DeviceActivityName) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         super.intervalWillEndWarning(for: activity)
+        if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
         guard let (kind, blockID) = Self.parse(activity) else { return }
         if kind == .lock { UsageMonitoring.reconcileLockout(blockID: blockID) }
         if kind == .breakWindow { BreakMonitoring.finishIfExpired(blockID: blockID) }

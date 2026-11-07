@@ -4,16 +4,25 @@ import Foundation
 /// is not schedule state: stopping/replacing a monitor can deliver a stale end.
 enum ScheduleEnforcement {
     static func releaseCurrentWindow(block: BlockRule, now: Date = Date()) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard block.type == .schedule, let window = block.schedule?.activeWindow(at: now) else { return }
         SharedDefaults.suite.set(window.end, forKey: SharedDefaults.Keys.scheduleReleasedUntil(blockID: block.id))
     }
 
     static func reconcile(blockID: UUID, now: Date = Date()) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard let block = BlockResolution.loadBlock(id: blockID) else { return }
         reconcile(block: block, now: now)
     }
 
     static func reconcile(block: BlockRule, now: Date = Date()) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard block.type == .schedule else { return }
         let defaults = SharedDefaults.suite
         let runningKey = SharedDefaults.Keys.running(blockID: block.id)

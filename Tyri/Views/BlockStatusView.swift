@@ -7,10 +7,11 @@ struct BlockStatusPresentation {
     let state: State
     let detail: String
     var end: Date? = nil
-    // Populated only by the explicitly enabled simulator review fixture until
-    // per-cycle usage measurement is integrated. Never infer usage from wall time.
+    // Last confirmed iOS threshold; never infer usage from wall time.
     var usedMinutes: Int? = nil
     var limitMinutes: Int? = nil
+    var lockStart: Date? = nil
+    var lockEnd: Date? = nil
 
     var title: String {
         switch state {
@@ -19,7 +20,7 @@ struct BlockStatusPresentation {
         case .paused: return "On a break"
         case .off: return "Blocking off"
         case .setup: return "Screen Time access needed"
-        case .unavailable: return "Tracking unavailable"
+        case .unavailable: return "Blocking needs attention"
         }
     }
     var color: Color {
@@ -56,6 +57,20 @@ struct BlockStatusPresentation {
         guard canDisplayActivity else {
             return Self(state: .setup, detail: "Allow access in Settings to start this block.")
         }
+        if ScreenTimeManager.shared.isBlockActive(block),
+           let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldError(blockID: block.id)) {
+            return Self(state: .unavailable, detail: error.isEmpty ? "iOS did not confirm this block. Follow the recovery steps below." : error)
+        }
+        if let error = SchedulingManager.shared.registrationErrors[block.id] {
+            return Self(state: .unavailable, detail: error.isEmpty ? "Automatic schedule registration failed." : error)
+        }
+        if let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: block.id)) {
+            return Self(state: .unavailable, detail: error.isEmpty ? "The automatic end could not be registered." : error)
+        }
+        if block.type == .timer,
+           let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) {
+            return Self(state: .unavailable, detail: error.isEmpty ? "Usage tracking could not start. Follow the recovery steps below." : error)
+        }
         if BreakMonitoring.isOnBreak(blockID: block.id) {
             return Self(state: .paused, detail: "Blocking resumes automatically.", end: BreakMonitoring.breakEnd(blockID: block.id))
         }
@@ -68,16 +83,15 @@ struct BlockStatusPresentation {
                     ? "Apps stay blocked. You can stop early at \(wait.endsAt.formatted(date: .omitted, time: .shortened))."
                     : "Wait complete. Open this block to stop it early.")
             }
-            return Self(state: .blocking, detail: detail, end: end)
+            let lockEnd = block.type == .timer ? UsageLimitManager.shared.lockEnd(for: block.id) : nil
+            return Self(state: .blocking, detail: detail, end: end,
+                        lockStart: lockEnd?.addingTimeInterval(-Double(block.usageLockMinutes * 60)), lockEnd: lockEnd)
         }
         if block.type == .timer {
-            if let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) {
-                return Self(state: .unavailable, detail: error)
-            }
             guard UsageMonitoring.isUsageMonitorActive(for: block.id) else {
                 return Self(state: .unavailable, detail: "Open this block to check its app lists and save to retry.")
             }
-            return Self(state: .tracking, detail: "Counts usage toward your next pause.", limitMinutes: block.usageLimitMinutes)
+            return Self(state: .tracking, detail: "Counts usage toward your next pause.", usedMinutes: UsageProgress.reported(blockID: block.id), limitMinutes: block.usageLimitMinutes)
         }
         return Self(state: .off, detail: block.type == .tag ? "Start with your NFC tag" : block.schedule?.summary ?? "No schedule set")
     }
@@ -91,9 +105,14 @@ struct BlockStatusPresentation {
 
     private static func reviewStatus(for block: BlockRule) -> Self? {
         guard let scenario = reviewScenario else { return nil }
+        if scenario == "attention" {
+            return block.type == .timer
+                ? Self(state: .unavailable, detail: "Usage tracking is not registered.")
+                : Self(state: .off, detail: "Ready when you need it")
+        }
         if block.type == .timer && scenario != "off" {
             if scenario == "locked" {
-                return Self(state: .blocking, detail: BlockingEndDescription.detail(timedEnd: reviewStart.addingTimeInterval(10800), manual: false, tag: false), end: reviewStart.addingTimeInterval(10800))
+                return Self(state: .blocking, detail: BlockingEndDescription.detail(timedEnd: reviewStart.addingTimeInterval(10680), manual: false, tag: false), end: reviewStart.addingTimeInterval(10680), lockStart: reviewStart.addingTimeInterval(-120), lockEnd: reviewStart.addingTimeInterval(10680))
             }
             return Self(state: .tracking, detail: "Counts usage toward your next pause.", usedMinutes: 9, limitMinutes: 30)
         }
@@ -123,16 +142,38 @@ struct UsageProgressView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("\(used) of \(limit) min used").font(.subheadline.weight(.medium))
                     Spacer(minLength: 8)
-                    Text("\(max(0, limit - used)) min left").font(.caption).foregroundStyle(.secondary)
                 }
                 ProgressView(value: Double(used), total: Double(max(1, limit))).tint(.blue)
                     .accessibilityLabel("Usage")
-                    .accessibilityValue("\(used) of \(limit) minutes used")
+                    .accessibilityValue("At least \(used) of \(limit) minutes used")
+                Text("Last reported by iOS · updates about every \(UsageProgress.step(for: limit)) min")
+                    .font(.caption2).foregroundStyle(.secondary)
             } else {
                 Text("\(limit) min allowance · Usage so far unavailable")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+struct LockElapsedView: View {
+    let start: Date
+    let end: Date
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let elapsed = min(max(0, context.date.timeIntervalSince(start)), end.timeIntervalSince(start))
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Blocked \(Self.clock(elapsed)) of \(Self.clock(end.timeIntervalSince(start)))")
+                    .font(.subheadline.weight(.medium)).monospacedDigit()
+                    .accessibilityIdentifier("lock-elapsed")
+                ProgressView(value: elapsed, total: max(1, end.timeIntervalSince(start))).tint(.red)
+                    .accessibilityLabel("Blocked time elapsed")
+            }
+        }
+    }
+    private static func clock(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        return String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
     }
 }
 
