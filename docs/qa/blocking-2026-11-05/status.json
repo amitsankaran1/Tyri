@@ -1,6 +1,6 @@
 {
-  "phase": "Actionable warning fix \u00b7 preparing 2.4 (7)",
-  "verdict": "PASS \u2014 recovery checks; packaging 2.4 (7)",
+  "phase": "Recovery warnings fixed \u00b7 2.4 (7) in internal TestFlight",
+  "verdict": "READY \u2014 physical-device acceptance remains open",
   "notion": "https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384",
   "rows": [
     [
@@ -17,6 +17,11 @@
       "PASS",
       "iOS 27 retry \u2192 Settings",
       "Sheet conflict fixed; list editing and permission recovery verified"
+    ],
+    [
+      "AVAILABLE",
+      "TestFlight 2.4 (7)",
+      "VALID / IN_BETA_TESTING; Amit Internal verified"
     ],
     [
       "DOCUMENTED",
@@ -47,11 +52,6 @@
       "PASS",
       "iOS 27 UI",
       "4/4 affected flows; screenshots inspected"
-    ],
-    [
-      "AVAILABLE",
-      "TestFlight 2.4 (6)",
-      "VALID / IN_BETA_TESTING; Amit Internal membership verified"
     ],
     [
       "PENDING",

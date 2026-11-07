@@ -396,8 +396,14 @@ Final production source: `8bb1ef551f303f3812a983c80f16a05395fc14fd` (base audit/
 
 App Store Connect query confirmed no 2.4 (5) build after the canceled attempt. Apple accepted the corrected package without errors. Processing is VALID; internal state is IN_BETA_TESTING; membership in Amit Internal is verified. Build/delivery ID: `ad212863-6283-479b-af04-8a91ccd435b6`. Testing notes and export compliance are saved; external review was not submitted. Screenshots and captions are preserved on the [Notion reliability task](https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384); temporary-session screenshot is an explicit empty-token/presentation fixture, and manual validation uses real missing authorization. Both were visually inspected.
 
-### Final status
+### 2.4 (6) audit status
 
 All six confirmed issue groups are fixed with regressions in the source above. The audit contains 15 state-machine areas. New suites pass 29 checks (13 lifecycle, 8 mutation, 4 NFC, 4 migration), plus the real interprocess lease test. Existing suites and modern-runtime UI checks pass as detailed above. The workspace dashboard records the same outcome. Physical-device acceptance and the listed platform risks remain open; they are not labeled fixed by automated evidence.
 
 The complete audit remains this repository file. A proposed full-file attachment to Notion was blocked by automatic approval review because that upload was not explicitly authorized; only the separately authorized results and screenshots are published there. No workaround upload was attempted.
+
+### 2.4 (7) recovery follow-up release
+
+SM-07 adds the actionable warning/recovery flow described above. Production source: `068d1904e719d3daca4d50ef91c719f232e85ca0`. IPA SHA-256: `7305f7aa9de55521826127f19ab09a1819c6e44db0a643964c41a69d845d851b`. Distribution signatures and profiles verified for app and extension; Family Controls/App Group present, debug entitlement absent; NFC present for app. Deferred AI remains excluded. Receipt: `release/builds/2.4-7.json`.
+
+Verification: 5 production retry contracts + 8 production presentation checks; 5/5 native UI flows on iOS 26.5; extended list → retry → permission flow 1/1 on iOS 27 after fixing the pre-release sheet conflict. Recovery instructions and final permission screen were visually inspected and screenshot evidence saved in the existing Notion QA task. Physical enforcement and iOS 17.5 remain unverified. Apple upload succeeded without errors. Processing is VALID; internal state IN_BETA_TESTING; Amit Internal membership verified. Build/delivery ID: `f5039c6d-ec9a-4817-8130-ef1f704becf8`. Test notes and export compliance are saved; no external review submitted. Build 2.4 (7) is the latest internal release.
