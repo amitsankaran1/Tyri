@@ -400,7 +400,7 @@ App Store Connect query confirmed no 2.4 (5) build after the canceled attempt. A
 
 All six confirmed issue groups are fixed with regressions in the source above. The audit contains 15 state-machine areas. New suites pass 29 checks (13 lifecycle, 8 mutation, 4 NFC, 4 migration), plus the real interprocess lease test. Existing suites and modern-runtime UI checks pass as detailed above. The workspace dashboard records the same outcome. Physical-device acceptance and the listed platform risks remain open; they are not labeled fixed by automated evidence.
 
-The complete audit remains this repository file. A proposed full-file attachment to Notion was blocked by automatic approval review because that upload was not explicitly authorized; only the separately authorized results and screenshots are published there. No workaround upload was attempted.
+This repository file is the canonical audit. The initial full-file Notion upload was blocked because it was not explicitly authorized; no workaround upload was attempted. Amit subsequently requested the complete state-machine document in Notion, authorizing publication of the full audit alongside the existing results and screenshots.
 
 ### 2.4 (7) recovery follow-up release
 
