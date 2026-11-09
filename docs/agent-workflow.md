@@ -2,6 +2,32 @@
 
 Task: https://app.notion.com/p/41316e0e0e3a819793daf1454045a641
 
+## How to use this
+
+Start from the agent's chat, with a task link and an observable outcome. For example:
+
+> Work on [Notion task URL] in Tyri. Follow docs/agent-workflow.md. Reproduce the bug, implement the fix, run the relevant checks, and open a draft PR. Update the task with evidence and the decision you need from me.
+
+The agent reads the task and project profile, resolves material scope questions, implements and checks the change, then sends you the PR and evidence. You do not need to move statuses by hand. Check Human review for a concrete decision; reply in the chat that owns the work:
+
+> Make these changes: [specific feedback].
+
+When satisfied, approve the named revision and requested action explicitly. For the initial workflow, merge the approved PR yourself in GitHub. To request an iOS candidate:
+
+> Prepare and upload the approved [commit/PR] to Tyri's existing internal TestFlight group. Verify processing and availability, and give me the affected physical-device checks.
+
+The agent uses the existing release runbook. Account/signing access may require your action. Install the reported version/build in TestFlight, perform the listed device checks, then reply with the version/build and results. Broader distribution of affected NFC, Screen Time or persistence behavior waits for that acceptance. Approve broader distribution separately, naming the build and group.
+
+To resume in another session, send the same task link and say "Resume from the latest checkpoint; inspect the existing branch and PR before starting another attempt." If delivery fails, ask to resume that delivery attempt; the agent checks the existing upload/run before retrying.
+
+For another software project:
+
+> Set up the workflow from [link to this document] for [repository/project]. Inspect its existing checks and release process, add its project profile, and link it from the Notion project. Start with chat authorization and human merge review.
+
+That project gets its own commands, candidate destination and release permissions. Future tasks then use the same start/review/resume prompts with that project's task link.
+
+**Available now on this branch:** instructions, the PR template and `bash scripts/check.sh`. Automatic pickup, auto-merge and automatic TestFlight delivery still require the follow-up setup. Pushing or merging this workflow PR does not activate them. The checks do not run automatically until CI is configured; agents must run and report them explicitly.
+
 ## Shared workflow
 
 1. Amit authorizes a named task in chat. Record the approved scope, acceptance criteria and requested destination in that task. Status and ownership never grant authority. No polling or checkbox is needed for the initial loop.
