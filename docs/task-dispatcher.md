@@ -4,7 +4,9 @@ Approved pilot: Tyri only; scheduled check every 15 minutes; one active implemen
 
 ## Activation requirements
 
-The hosted scheduler must have connected Notion access and a coding executor it can start without Amit copying a task link. The executor needs Tyri repository read/write access, an isolated checkout, a suitable macOS/Xcode environment for its required checks, and a place to save run/PR evidence.
+Use a native ChatGPT/Codex routine first, rather than a separate GitHub Actions dispatcher service. If its run has the repository and coding tools, that run may enrich and implement directly; a second coding agent is not required. If it cannot execute in the required environment, it must be able to start a verified executor without Amit copying a task link.
+
+The routine needs connected Notion access, Tyri repository access, an isolated checkout and durable run/PR evidence. Route tasks requiring Xcode, Simulator or signing to a verified Mac execution/build path. Do not require macOS for documentation-only work, and do not claim iOS checks from an environment without Xcode.
 
 Configure one serialized dispatcher and enforce the per-project execution slot in the host. A Notion status or body checkpoint is not an atomic lock. If the host cannot enforce single ownership, do not enable dispatch. Do not start independent dispatchers in GB, Dot or Instinct; they remain filing agents and may use the shared enrichment skill.
 
@@ -31,3 +33,15 @@ Do not send messages through GB, Dot, email or other channels. Keep results in t
 ## Current state
 
 The shared skill is created and enabled. The scheduled prompt is prepared. No hosted scheduler/executor pair has been connected or activated, and no automatic coding dispatch has been verified.
+
+## Native environment setup and first probe
+
+Create a private Tyri environment using the native Cloud environment setup flow with repository `amitsankaran1/Tyri`. Ask setup to inspect and report the actual toolchain and permissions rather than assuming it supports Xcode. Publish only after the setup report identifies what can run.
+
+Use this setup request:
+
+> Prepare this repository for bounded coding tasks. Identify the checked-out branch/revision and installed tools. Preserve bundle identifiers, signing settings and app behavior. Verify repository read access and the commands available for documentation validation and deterministic checks. If Swift or Xcode is unavailable, report that explicitly; do not substitute a different check or claim iOS build readiness. Do not request distribution credentials for this first documentation-only probe. Save setup changes only if needed, and report the resulting environment capabilities.
+
+The first routine probe should read the enrichment skill through connected Notion access, inspect a specified read-only task, identify its project and return the environment/run identity and repository revision. If its tool set cannot read Notion or execute repository commands, stop and report the missing capability before activating pickup.
+
+Then test an explicitly scoped documentation fix through a draft PR. A successful manual `codex cloud exec` submission proves only that the CLI can start a task; it does not prove that an unattended native routine has the same access. Verify the actual scheduled/Run now routine path before declaring the phone-to-coding loop ready.
