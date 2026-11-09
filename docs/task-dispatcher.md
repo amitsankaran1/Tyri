@@ -32,7 +32,11 @@ Do not send messages through GB, Dot, email or other channels. Keep results in t
 
 ## Current state
 
-The shared skill is created and enabled. The scheduled prompt is prepared. No hosted scheduler/executor pair has been connected or activated, and no automatic coding dispatch has been verified.
+The shared skill is created and enabled. A native hosted task has been created and tested: connected Notion/GitHub reads, Linux shell validation, a fixture-only draft PR (#26), and a result written back to the pipeline task. It executes directly; a separate Cloud-task launcher is absent. No Xcode/Swift testing or TestFlight delivery was verified. Initial implementation scope is documentation-only factual bugs. See [the saved native prompt](native-routine-prompt.md).
+
+The native hosted scheduler supports at most one run per hour. The proposed 15-minute interval was rejected as unsupported. Recurring pickup remains disabled pending cadence selection; the original one-shot probe is completed/paused. It must not be repeated.
+
+Single-owner execution is initialized on the separate `automation/tyri-dispatch-state` branch at `.automation/dispatch-lock.json`. Acquire and release with GitHub's expected content SHA, unique owner/generation tokens, and ownership verification. Integration testing confirmed a competing stale-SHA update returns 409 and leaves the owner intact. Never treat task Status as ownership; never auto-clear an uncertain crashed run's slot. This lock is runtime metadata, not a new task lifecycle.
 
 ## Native environment setup and first probe
 
