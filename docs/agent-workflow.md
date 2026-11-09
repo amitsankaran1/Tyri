@@ -30,7 +30,7 @@ That project gets its own commands, candidate destination and release permission
 
 ## Shared workflow
 
-1. Amit authorizes a named task in chat. Record the approved scope, acceptance criteria and requested destination in that task. Status and ownership never grant authority. No polling or checkbox is needed for the initial loop.
+1. Amit authorizes a named task in chat, or the enabled project's standing pickup policy authorizes a newly filed clear bug. The approved Tyri pilot uses one hosted dispatcher checking every 15 minutes, with one implementation per project; see [the dispatcher setup](task-dispatcher.md). Record scope, acceptance criteria and requested destination in the task. Status and ownership never grant authority. The pilot is not active until its host/executor are connected and verified.
 2. Read the latest task, project instructions and repository instructions. Continue the existing attempt when appropriate. Use an isolated branch/worktree and record its location. If scope has materially changed, resolve the change before implementing it.
 3. Implement independently within scope. Select checks that exercise the changed behavior; for bugs reproduce the failure when feasible. Record source revision, commands, results, environment and unverified acceptance criteria. For UI changes, inspect screenshots and attach captioned evidence to the project's Notion task/page, labeling fixtures and limitations.
 4. Prepare a PR with the task link, resulting behavior, validation and recovery implications. Use Human review when a concrete result needs Amit's decision; say exactly what decision is needed. Revisions return to In progress. Until an explicit eligibility policy is approved, Amit approves merges.
