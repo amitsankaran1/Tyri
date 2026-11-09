@@ -1,0 +1,47 @@
+# Agent work and delivery
+
+Task: https://app.notion.com/p/41316e0e0e3a819793daf1454045a641
+
+## Shared workflow
+
+1. Amit authorizes a named task in chat. Record the approved scope, acceptance criteria and requested destination in that task. Status and ownership never grant authority. No polling or checkbox is needed for the initial loop.
+2. Read the latest task, project instructions and repository instructions. Continue the existing attempt when appropriate. Use an isolated branch/worktree and record its location. If scope has materially changed, resolve the change before implementing it.
+3. Implement independently within scope. Select checks that exercise the changed behavior; for bugs reproduce the failure when feasible. Record source revision, commands, results, environment and unverified acceptance criteria. For UI changes, inspect screenshots and attach captioned evidence to the project's Notion task/page, labeling fixtures and limitations.
+4. Prepare a PR with the task link, resulting behavior, validation and recovery implications. Use Human review when a concrete result needs Amit's decision; say exactly what decision is needed. Revisions return to In progress. Until an explicit eligibility policy is approved, Amit approves merges.
+5. Deliver only to the destination authorized for the project/task. Report merge, artifact creation, availability to users and acceptance separately. A successful upload or build is insufficient evidence of availability.
+6. Mark Done when the agreed task outcome is verified. If delivery was promised, include delivery evidence. Keep missing checks explicit. Use Blocked for a missing input/action preventing progress, not ordinary review. Retries and CI runs stay in the evidence, without extra task statuses.
+
+The same steps apply across projects; each project supplies a small profile describing its commands, environments, required manual checks, delivery authority and recovery procedure. Copy the template below rather than building a universal deployment engine. GitHub/CI retains execution state; Notion retains scope, decisions and evidence.
+
+## Tyri profile
+
+- Source: `amitsankaran1/Tyri`; default integration branch `main`; Xcode project `Tyri.xcodeproj`, shared scheme `Tyri` (includes the app, monitor and UI test target).
+- Deterministic checks: `bash scripts/check.sh`. The callback and scheduling suites use OS/store doubles. They do not establish physical Screen Time behavior.
+- Compilation: `xcodebuild -project Tyri.xcodeproj -scheme Tyri -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/tyri-agent-build CODE_SIGNING_ALLOWED=NO build`. Use a fresh derived-data directory per attempt.
+- UI checks: select an installed simulator explicitly and run `xcodebuild -project Tyri.xcodeproj -scheme Tyri -destination 'platform=iOS Simulator,id=<UDID>' -resultBundlePath <fresh-path>.xcresult test`. Choose relevant NavigationTests scenarios after inspecting them; report what actually ran. Check adaptive layouts and preserve unsaved edits when affected.
+- Device acceptance: NFC scans, authorization, real shielding, category deselection, usage/lockout cycles, breaks, cooldowns, relaunch/upgrade persistence, and timing/background behavior as affected. Simulator screenshots and test doubles cannot substitute for these checks. Record device/OS, version/build and observed behavior.
+- Distribution: use the existing app record and bundle IDs; preserve app and monitor entitlements, Family Controls, App Group and NFC capability. Follow `release/README.md`. Version/build numbers must agree across app and extension and be unused in App Store Connect. Record source SHA, archive/export identity, signing verification, upload result, processing result and tester-group availability. Never commit credentials.
+- Build service and automatic delivery trigger/audience are not selected. Xcode Cloud and GitHub Actions/Fastlane remain options. Proposed first audience is the existing internal group. Physical-device acceptance before wider distribution remains a proposal pending Amit's decision.
+- Recovery: preserve the previous known-good release receipt. A code revert creates a new candidate; it does not uninstall an iOS build or undo user data changes. Review persistence compatibility before distributing a replacement. No App Store release or external beta review submission is implied by a TestFlight task.
+
+## Project profile template
+
+Keep one profile in each repository and link it from the existing Notion project:
+
+- Repository, integration branch, runtime/toolchain prerequisites.
+- Fast checks, integration checks and build command; where evidence is saved.
+- UI evidence and manual/hardware checks that automation cannot establish.
+- Candidate destination (preview URL, internal beta, staging service or package artifact), delivery command/service and availability check.
+- Promotion to production/public distribution: who authorizes it and what evidence is required.
+- Credentials: required secret names and secure host/location only, never values.
+- Recovery: previous artifact/deployment and data/schema compatibility limitations.
+
+For a web app, replace simulator and TestFlight steps with browser/integration checks and a verified preview URL. For a service, use integration/contract checks and staging health checks, including migration compatibility. For a CLI/library, build an installable package and smoke-test that artifact in a clean environment. These are adaptation examples, not enabled deployments or project-wide permissions.
+
+## Automation boundaries
+
+Future auto-merge eligibility and delivery policy: https://app.notion.com/p/41316e0e0e3a8115b74fd0c8ce92b618
+
+Eligibility is evaluated against the current diff and required evidence, not an agent's confidence label. Tests/review must apply to the revision being merged; new commits invalidate prior evidence as appropriate. Mixed or uncertain changes require Human review. Blocking behavior, persistence, signing, entitlements and dependency changes require human review under the current agreement.
+
+Use the CI provider's native concurrency and run identities. Resume or retry a known run before creating another upload; check whether Apple accepted an upload before retrying an uncertain result. Do not start deployment from a Notion status change. Build-time secrets remain with the selected delivery host, separate from untrusted PR checks. Auto-merge, unattended pickup and automatic deployment are not enabled by this document.
