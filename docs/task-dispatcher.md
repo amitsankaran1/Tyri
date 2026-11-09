@@ -1,6 +1,6 @@
 # Hosted task dispatcher
 
-Approved pilot: Tyri only; scheduled check every 15 minutes; one active implementation per project. Filing a clear bug through any of Amit's agents authorizes investigation and an eligible low-risk fix through a PR. Human merge review remains required. This replaces chat-only pickup for the enabled pilot.
+Approved pilot: Tyri only; scheduled check every hour; one active implementation per project. Filing a clear bug through any of Amit's agents authorizes investigation and an eligible low-risk fix through a PR. Human merge review remains required. This replaces chat-only pickup for the enabled pilot.
 
 ## Activation requirements
 
@@ -20,7 +20,7 @@ Check Tasks at https://app.notion.com/p/69b0ba1ab76140ccbc98da7cf3b607ed for new
 
 Load the shared enrich-bug-task skill from https://app.notion.com/p/41316e0e0e3a815cbd30e796d7e29bac and the live Tyri project/testing profile. Read the actual database schema before querying. Scope candidates to the Tyri relation, new reports after activation, and unstarted Inbox bugs. Inbox is a filter, not authorization: require the standing pilot authority and a clear defect report as well. Do not pick up ideas/features, Future/parked, paused, Done, Archived, Human review or work already owned by an executor.
 
-Inspect current task checkpoints and existing repo branches/PRs. Enrich eligible reports using the shared skill, preserving original evidence. No unchanged-task rewrites or repeated questions every 15 minutes. Missing user intent and higher-risk decisions go to Human review with a concise question and recommendation. Missing runtime access is recorded as an operational dependency.
+Inspect current task checkpoints and existing repo branches/PRs. Enrich eligible reports using the shared skill, preserving original evidence. No unchanged-task rewrites or repeated questions on every poll. Missing user intent and higher-risk decisions go to Human review with a concise question and recommendation. Missing runtime access is recorded as an operational dependency.
 
 Before launch, acquire the host's project execution slot and re-read the task and its material scope. If another implementation is active, leave the task queued and release this check's resources. The slot belongs to the executor run until completion or confirmed termination, not merely until the polling check ends. On an uncertain launch result, inspect the existing run identity; do not launch another attempt. On expired/disconnected ownership, reconcile the actual run and PR before releasing/retrying.
 
@@ -34,7 +34,7 @@ Do not send messages through GB, Dot, email or other channels. Keep results in t
 
 The shared skill is created and enabled. A native hosted task has been created and tested: connected Notion/GitHub reads, Linux shell validation, a fixture-only draft PR (#26), and a result written back to the pipeline task. It executes directly; a separate Cloud-task launcher is absent. No Xcode/Swift testing or TestFlight delivery was verified. Initial implementation scope is documentation-only factual bugs. See [the saved native prompt](native-routine-prompt.md).
 
-The native hosted scheduler supports at most one run per hour. The proposed 15-minute interval was rejected as unsupported. Recurring pickup remains disabled pending cadence selection; the original one-shot probe is completed/paused. It must not be repeated.
+The native hosted scheduler supports at most one run per hour. The proposed 15-minute interval was rejected as unsupported. Amit approved hourly pickup. The existing native task is active with exact_schedule and RRULE:FREQ=HOURLY;INTERVAL=1, starting 2026-11-09 22:30 UTC. The saved prompt and UI schedule were verified. The original fixture probe must not be repeated.
 
 Single-owner execution is initialized on the separate `automation/tyri-dispatch-state` branch at `.automation/dispatch-lock.json`. Acquire and release with GitHub's expected content SHA, unique owner/generation tokens, and ownership verification. Integration testing confirmed a competing stale-SHA update returns 409 and leaves the owner intact. Never treat task Status as ownership; never auto-clear an uncertain crashed run's slot. This lock is runtime metadata, not a new task lifecycle.
 

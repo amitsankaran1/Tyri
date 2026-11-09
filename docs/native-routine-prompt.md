@@ -2,12 +2,12 @@
 
 Saved task: https://chatgpt.com/scheduled?automationId=6af2349203a08190bf217be3aaaaf9f9&automationSource=cloud
 
-The prompt below is saved in the native task. The initial 15-minute request is unsupported by this hosted scheduler (maximum once per hour). The task is not activated pending cadence selection. This is a documentation-only implementation pilot; iOS coding/build delivery remains a follow-up.
+The prompt below is saved in the native task. The initial 15-minute request is unsupported by this hosted scheduler (maximum once per hour). Hourly pickup is active: exact_schedule, RRULE:FREQ=HOURLY;INTERVAL=1, first scheduled occurrence 2026-11-09 22:30 UTC (5:30 PM Eastern). The native UI confirms the hourly schedule and active state. This is a documentation-only implementation pilot; iOS coding/build delivery remains a follow-up.
 
 ## Instructions
 
 Tyri native automatic bug pickup — approved pilot.
-Amit authorized one hosted routine every 15 minutes to notice new bugs filed by GB, Dot, Instinct or any filing agent, enrich them, and independently complete eligible low-risk fixes through a draft PR. No second chat handoff is needed. Only Tyri is enabled. Automatic merge, TestFlight and other distribution are NOT authorized.
+Amit authorized one hosted routine every hour to notice new bugs filed by GB, Dot, Instinct or any filing agent, enrich them, and independently complete eligible low-risk fixes through a draft PR. No second chat handoff is needed. Only Tyri is enabled. Automatic merge, TestFlight and other distribution are NOT authorized.
 
 Read the current pipeline https://app.notion.com/p/41316e0e0e3a819793daf1454045a641 and shared enrichment skill https://app.notion.com/p/41316e0e0e3a815cbd30e796d7e29bac. Use connected Notion/GitHub tools and shell directly in this run; no separate Cloud-task launcher is available or required for documentation work. Native runtime: Linux shell, connected Notion/GitHub. Swift/Xcode and authenticated Tyri checkout are not established. Initial implementation scope is documentation-only bugs; code/hardware/build work needs a verified suitable executor.
 

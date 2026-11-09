@@ -4,7 +4,9 @@ Task: https://app.notion.com/p/41316e0e0e3a819793daf1454045a641
 
 ## How to use this
 
-Start from the agent's chat, with a task link and an observable outcome. For example:
+For new Tyri bugs, file the report through GB, Dot, Instinct or another connected agent in Tasks with Project = Tyri and Status = Inbox. The native hourly routine checks for eligible reports; no second chat handoff is needed. The first implementation pilot covers source-backed documentation corrections through a draft PR. App-code changes and iOS testing/delivery still need the separate verified execution path.
+
+For other work, or projects not yet enabled for automatic pickup, start from the coding agent's chat with a task link and an observable outcome. For example:
 
 > Work on [Notion task URL] in Tyri. Follow docs/agent-workflow.md. Reproduce the bug, implement the fix, run the relevant checks, and open a draft PR. Update the task with evidence and the decision you need from me.
 
@@ -26,11 +28,11 @@ For another software project:
 
 That project gets its own commands, candidate destination and release permissions. Future tasks then use the same start/review/resume prompts with that project's task link.
 
-**Available now on this branch:** instructions, the PR template and `bash scripts/check.sh`. Automatic pickup, auto-merge and automatic TestFlight delivery still require the follow-up setup. Pushing or merging this workflow PR does not activate them. The checks do not run automatically until CI is configured; agents must run and report them explicitly.
+**Available now:** the native hourly routine is active for eligible new Tyri documentation bugs through a draft PR. This branch adds the workflow, PR template and `bash scripts/check.sh`. App-code pickup, auto-merge and automatic TestFlight delivery still require their follow-up setup. Project checks do not run automatically until CI is configured; agents must run and report applicable checks explicitly.
 
 ## Shared workflow
 
-1. Amit authorizes a named task in chat, or the enabled project's standing pickup policy authorizes a newly filed clear bug. The approved Tyri pilot uses one hosted dispatcher checking every 15 minutes, with one implementation per project; see [the dispatcher setup](task-dispatcher.md). Record scope, acceptance criteria and requested destination in the task. Status and ownership never grant authority. The pilot is not active until its host/executor are connected and verified.
+1. Amit authorizes a named task in chat, or the enabled project's standing pickup policy authorizes a newly filed clear bug. The approved Tyri pilot uses one hosted dispatcher checking every hour, with one implementation per project; see [the dispatcher setup](task-dispatcher.md). Record scope, acceptance criteria and requested destination in the task. Status and ownership never grant authority. The initial documentation-only pilot is active and its native execution-through-PR path is verified.
 2. Read the latest task, project instructions and repository instructions. Continue the existing attempt when appropriate. Use an isolated branch/worktree and record its location. If scope has materially changed, resolve the change before implementing it.
 3. Implement independently within scope. Select checks that exercise the changed behavior; for bugs reproduce the failure when feasible. Record source revision, commands, results, environment and unverified acceptance criteria. For UI changes, inspect screenshots and attach captioned evidence to the project's Notion task/page, labeling fixtures and limitations.
 4. Prepare a PR with the task link, resulting behavior, validation and recovery implications. Use Human review when a concrete result needs Amit's decision; say exactly what decision is needed. Revisions return to In progress. Until an explicit eligibility policy is approved, Amit approves merges.
