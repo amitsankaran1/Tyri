@@ -3,7 +3,7 @@
     "type": "ciWorkflows",
     "attributes": {
       "name": "Tyri PR checks",
-      "description": "Current-revision simulator checks; no distribution. Deterministic suites run in ci_post_clone.sh.",
+      "description": "Required latest-revision simulator build, UI tests and analysis for PRs to main. No archive or distribution.",
       "containerFilePath": "Tyri.xcodeproj",
       "isEnabled": true,
       "clean": true,
