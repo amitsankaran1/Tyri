@@ -32,10 +32,12 @@ struct AdHocBlockView: View {
                 }
                 Section {
                     if let releaseAt = session.releaseAt {
-                        if releaseAt > Date() {
-                            HStack { Text("Stop early in"); Text(releaseAt, style: .timer).monospacedDigit() }
-                        } else {
-                            Button("Release block", role: .destructive) { manager.release(); dismiss() }
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if releaseAt > context.date {
+                                HStack { Text("Stop early in"); Text(releaseAt, style: .timer).monospacedDigit() }
+                            } else {
+                                Button("Release block", role: .destructive) { manager.release(); dismiss() }
+                            }
                         }
                     } else {
                         Button("Stop early…") {
@@ -90,7 +92,12 @@ struct AdHocBlockView: View {
         .navigationTitle("Block for a while")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        .onAppear { manager.refresh() }
+        .onAppear {
+            manager.refresh()
+            #if DEBUG
+            TestHarness.prepareAdHocReleaseWaitForUIReview()
+            #endif
+        }
         .onReceive(timer) { _ in manager.refresh(reconcile: false) }
     }
 }

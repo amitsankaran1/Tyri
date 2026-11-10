@@ -1,0 +1,60 @@
+name: Tyri TestFlight receipt
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Tyri/**'
+      - 'Shared/**'
+      - 'TyriMonitor/**'
+      - 'Tyri.xcodeproj/**'
+      - 'TyriUITests/**'
+      - 'Tests/**'
+      - 'scripts/**'
+      - 'ci_scripts/**'
+      - '.github/workflows/**'
+      - 'release/ExportOptions.plist'
+      - 'release/WhatToTest.txt'
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Unique 32-hex request token, reused when resuming this request
+        required: true
+      source_sha:
+        description: Exact current approved main revision
+        required: true
+
+permissions:
+  contents: write # Create only protected immutable candidate tags from approved main.
+  issues: write
+
+jobs:
+  verify-internal:
+    if: >-
+      github.repository == 'amitsankaran1/Tyri' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'amitsankaran1') ||
+       (github.event_name == 'issue_comment' && github.actor == 'amitsankaran1' &&
+        github.event.issue.number == 25 && github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '/tyri-build ')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    environment: tyri-internal-delivery
+    concurrency:
+      group: tyri-internal-delivery
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Request or reconcile the Xcode Cloud candidate and verify TestFlight
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: python3 scripts/testflight_bridge.py

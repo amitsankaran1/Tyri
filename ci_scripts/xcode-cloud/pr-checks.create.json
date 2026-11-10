@@ -1,0 +1,94 @@
+{
+  "data": {
+    "type": "ciWorkflows",
+    "attributes": {
+      "name": "Tyri PR checks",
+      "description": "Required latest-revision simulator build, UI tests and analysis for PRs to main. No archive or distribution.",
+      "containerFilePath": "Tyri.xcodeproj",
+      "isEnabled": true,
+      "clean": true,
+      "pullRequestStartCondition": {
+        "source": {
+          "isAllMatch": true
+        },
+        "destination": {
+          "patterns": [
+            {
+              "pattern": "main",
+              "isPrefix": false
+            }
+          ]
+        },
+        "autoCancel": true
+      },
+      "manualBranchStartCondition": {
+        "source": {
+          "isAllMatch": true
+        }
+      },
+      "actions": [
+        {
+          "name": "Build iOS simulator",
+          "actionType": "BUILD",
+          "destination": "ANY_IOS_SIMULATOR",
+          "scheme": "Tyri",
+          "platform": "IOS",
+          "isRequiredToPass": true
+        },
+        {
+          "name": "Test iOS",
+          "actionType": "TEST",
+          "scheme": "Tyri",
+          "platform": "IOS",
+          "isRequiredToPass": true,
+          "testConfiguration": {
+            "kind": "USE_SCHEME_SETTINGS",
+            "testDestinations": [
+              {
+                "kind": "SIMULATOR",
+                "deviceTypeName": "iPhone 18 Pro",
+                "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro",
+                "runtimeName": "iOS 27.2",
+                "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Analyze iOS",
+          "actionType": "ANALYZE",
+          "destination": "ANY_IOS_SIMULATOR",
+          "scheme": "Tyri",
+          "platform": "IOS",
+          "isRequiredToPass": true
+        }
+      ]
+    },
+    "relationships": {
+      "product": {
+        "data": {
+          "type": "ciProducts",
+          "id": "4b792aee-e88d-4d54-b834-3b7837a7cd28"
+        }
+      },
+      "repository": {
+        "data": {
+          "type": "scmRepositories",
+          "id": "3111bb30-22b7-4250-9b13-9160d3dd6233"
+        }
+      },
+      "xcodeVersion": {
+        "data": {
+          "type": "ciXcodeVersions",
+          "id": "8330ad8b-821d-4f60-afe3-8a598385c7e9"
+        }
+      },
+      "macOsVersion": {
+        "data": {
+          "type": "ciMacOsVersions",
+          "id": "353ddc8d-0ec5-436d-b324-fd88644df393"
+        }
+      }
+    }
+  }
+}

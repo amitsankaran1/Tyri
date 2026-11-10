@@ -1,0 +1,80 @@
+{
+  "data": {
+    "type": "ciWorkflows",
+    "id": "37dfe861-29f0-4013-bc1c-5dc29544d23d",
+    "attributes": {
+      "isEnabled": false,
+      "branchStartCondition": {
+        "source": {
+          "patterns": [
+            {
+              "pattern": "main",
+              "isPrefix": false
+            }
+          ]
+        },
+        "autoCancel": false,
+        "filesAndFoldersRule": {
+          "mode": "START_IF_ANY_FILE_MATCHES",
+          "matchers": [
+            {
+              "directory": "Tyri"
+            },
+            {
+              "directory": "Shared"
+            },
+            {
+              "directory": "TyriMonitor"
+            },
+            {
+              "directory": "Tyri.xcodeproj"
+            },
+            {
+              "directory": "TyriUITests"
+            },
+            {
+              "directory": "Tests"
+            },
+            {
+              "directory": "scripts"
+            },
+            {
+              "directory": "ci_scripts"
+            },
+            {
+              "directory": ".github/workflows"
+            },
+            {
+              "directory": "release",
+              "fileName": "ExportOptions.plist"
+            },
+            {
+              "directory": "release",
+              "fileName": "WhatToTest.txt"
+            }
+          ]
+        }
+      },
+      "manualBranchStartCondition": {
+        "source": {
+          "patterns": [
+            {
+              "pattern": "main",
+              "isPrefix": false
+            }
+          ]
+        }
+      },
+      "manualTagStartCondition": {
+        "source": {
+          "patterns": [
+            {
+              "pattern": "automation/tyri-candidate-",
+              "isPrefix": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}
