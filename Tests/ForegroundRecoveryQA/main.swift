@@ -128,13 +128,18 @@ extension BlockingSchedule {
         recovery.request()
         try await wait { Probe.didEnter }
         QAClock.now = end.addingTimeInterval(1)
+        recovery.request()
+        precondition(recovery.isChecking, "The native worker was not still stalled")
+        precondition(BreakMonitoring.breakEnd(blockID: tag) == nil && State.shields.contains(tag),
+                     "Deadline fallback waited for stalled IPC before restoring protection")
+        precondition(BreakMonitoring.breakUsed(blockID: tag))
         Probe.release.signal()
         try await wait { !recovery.isChecking }
         precondition(BreakMonitoring.breakEnd(blockID: tag) == nil && State.shields.contains(tag),
                      "Deadline crossing during IPC failed to restore protection in the same cycle")
         precondition(BreakMonitoring.breakUsed(blockID: tag), "Recovery renewed the break allowance")
         precondition(Migration.runs == 1)
-        print("PASS: break deadline crossing re-shields in the same cycle and retains its used allowance")
+        print("PASS: break expiry re-shields BEFORE stalled IPC returns and retains its used allowance")
         print("PASS: migration retries after lease contention exactly once without blocking MainActor")
     }
 }
