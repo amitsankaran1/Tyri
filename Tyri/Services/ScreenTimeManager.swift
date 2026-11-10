@@ -40,9 +40,7 @@ class ScreenTimeManager: ObservableObject {
             print("⚠️ Cannot restore blocking: authorization not approved")
             return
         }
-        for block in BlockStore.shared.blocks where block.isEnabled {
-            applyBlockShield(block)
-        }
+        ForegroundRecovery.shared.request()
     }
 
     func checkAuthorizationStatus() {

@@ -4,6 +4,7 @@ root=Path(__file__).resolve().parents[2]
 s=(root/'Tyri/Services/UsageLimitManager.swift').read_text();a=s.index('    func applyUsageLimit(');b=s.index('    /// Full teardown',a)
 s=s[a:b];a=s.index('        #if DEBUG');b=s.index('        #endif',a)+len('        #endif');s=s[:a]+s[b:]
 d='''import Foundation
+final class ForegroundRecovery {static let shared=ForegroundRecovery();func request(){}}
 struct BlockRule {enum Kind{case timer,tag};var id=UUID();var type:Kind = .timer}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"usage-recovery-qa")!;enum Keys{static func usageError(blockID:UUID)->String{blockID.uuidString};static func usageLockEnd(blockID:UUID)->String{"lock."+blockID.uuidString}}}
 enum UsageMonitoring {

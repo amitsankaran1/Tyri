@@ -1,5 +1,9 @@
 import Foundation
 protocol ObservableObject {}
+@MainActor final class ForegroundRecovery {
+    static let shared = ForegroundRecovery()
+    func request() {}
+}
 @propertyWrapper struct Published<Value> { var wrappedValue: Value }
 struct DeviceActivityName: Hashable { var rawValue: String }
 struct DeviceActivitySchedule {}

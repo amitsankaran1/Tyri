@@ -17,7 +17,10 @@ final class AdHocManager: ObservableObject {
             ?? SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: session.id))
     }
     func refresh(reconcile: Bool = true) {
-        if reconcile || (AdHocMonitoring.session.map { $0.endsAt <= Date() } ?? false) { AdHocMonitoring.reconcile() }
+        if reconcile || (AdHocMonitoring.session.map { $0.endsAt <= Date() } ?? false) { ForegroundRecovery.shared.request() }
+        publishPersistedState()
+    }
+    func publishPersistedState() {
         let latest = AdHocMonitoring.session
         let latestError = Self.error(for: latest)
         // Publishing an unchanged value rebuilds an open SwiftUI picker menu.

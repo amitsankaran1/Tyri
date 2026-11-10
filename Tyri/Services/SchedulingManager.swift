@@ -117,13 +117,17 @@ class SchedulingManager: ObservableObject {
 
     /// Repair missing/delayed callbacks before publishing current schedule state.
     func refresh() {
-        guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        publishRecovery(errors: registrationErrors)
+        ForegroundRecovery.shared.request()
+    }
 
+    /// Publish persisted state only; view construction must not acquire a lease
+    /// or contact DeviceActivity while the recovery worker owns that lease.
+    func publishRecovery(errors: [UUID: String]) {
+        registrationErrors = errors
         var ids: Set<UUID> = []
         let suite = SharedDefaults.suite
         for block in BlockStore.shared.blocks where block.type == .schedule {
-            ScheduleEnforcement.reconcile(block: block)
             if suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id)) {
                 ids.insert(block.id)
             }

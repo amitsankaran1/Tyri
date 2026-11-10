@@ -39,6 +39,7 @@ class UsageLimitManager: ObservableObject {
     ///   (launch), leave an already-running monitor untouched so the day's
     ///   accumulated usage isn't wiped just by reopening the app.
     func applyUsageLimit(for block: BlockRule, forceReset: Bool = true) {
+        defer { ForegroundRecovery.shared.request() }
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
@@ -146,7 +147,7 @@ class UsageLimitManager: ObservableObject {
     private func startPeriodicRefresh() {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.reconcileExpiredLocks() }
+            Task { @MainActor in ForegroundRecovery.shared.request() }
         }
     }
 }

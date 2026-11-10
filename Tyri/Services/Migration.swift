@@ -16,6 +16,9 @@ import DeviceActivity
 enum Migration {
 
     static func runIfNeeded() {
+        // The common (already migrated) launch path is a read only check. It
+        // must not wait on a foreground worker's interprocess lease.
+        guard !SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
         let suite = SharedDefaults.suite

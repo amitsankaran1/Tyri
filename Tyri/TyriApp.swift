@@ -30,16 +30,12 @@ struct TyriApp: App {
                     Migration.runIfNeeded()
                     BlockStore.shared.reload()
                     AppGroupStore.shared.reload()
-                    SchedulingManager.shared.reapplyAllSchedules()
-                    UsageLimitManager.shared.reapplyAllUsageLimits()
-                    UsageLimitManager.shared.reconcileExpiredLocks()
-                    AdHocManager.shared.refresh()
                     CooldownManager.shared.restoreActiveCooldownsIfAny()
-                    BreakManager.shared.restoreActiveBreaksIfAny()
                     #if DEBUG
                     TestHarness.seedDemoStateIfRequested()
                     TestHarness.runIfEnabled()
                     #endif
+                    ForegroundRecovery.shared.start()
                 }
         }
     }
