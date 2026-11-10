@@ -6,9 +6,9 @@ This is the proposed configuration, not a claim that cloud CI or automatic deliv
 
 ## Source prerequisite
 
-As of November 9, 2026, `main` is `4a397217544cc1391993b2fcab28d595b50e09e4` (2.3 build 9). PR #24 contains the released 2.4 build 7 source and its receipts, at head `1ab664b1e2230be7aa2ad4d15bd5e241c30c5045`. Its receipt identifies built source `068d1904e719d3daca4d50ef91c719f232e85ca0`, successful processing and availability in `Amit Internal`; physical enforcement remains unverified. Verify the current Apple account record before selecting another number.
+On November 9, 2026, PR #24 was merged with Amit's reconciliation authorization. Canonical `main` is now `cebf0b194258d3a7e979465c06d29df59382aacd`, containing the released 2.4 build 7 source and its receipts. The release receipt identifies built source `068d1904e719d3daca4d50ef91c719f232e85ca0`, successful processing and availability in `Amit Internal`; physical enforcement remains unverified. Verify the current Apple account record before selecting another number.
 
-Review and reconcile PR #24 into the canonical integration branch before enabling release triggers. Keep `deferred/nl-creation-2.4` out of this rollout. Rebase/update workflow PR #25 after that reconciliation and run checks on the combined source. No merge is authorized by this document.
+Workflow PR #25 includes that main merge and is checked against the combined source. Keep `deferred/nl-creation-2.4` out of this rollout. The one-time reconciliation does not authorize future automatic merges or release triggers.
 
 ## Proposed Xcode Cloud configuration
 
