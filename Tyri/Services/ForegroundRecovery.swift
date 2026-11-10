@@ -3,9 +3,28 @@ import Combine
 import DeviceActivity
 import FamilyControls
 
-/// Automatic recovery must never wait for Screen Time's synchronous XPC on the
-/// main thread. Keep the entire transaction (including its recursive lease) on
-/// one worker thread; only publish its result back on MainActor.
+/// Contains native value inputs only; no shared-store or actor access during IPC.
+nonisolated private struct RecoveryJob: @unchecked Sendable {
+    let ticket: MonitorReservation
+    let schedule: DeviceActivitySchedule
+    var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
+    var fallback: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
+    func execute() -> (succeeded: Bool, reportsProgress: Bool, error: String?) {
+        precondition(!Thread.isMainThread)
+        let center = DeviceActivityCenter()
+        let name = DeviceActivityName(rawValue: ticket.name)
+        do {
+            do { try center.startMonitoring(name, during: schedule, events: events) }
+            catch {
+                guard !fallback.isEmpty else { throw error }
+                try center.startMonitoring(name, during: schedule, events: fallback)
+                return (true, false, nil)
+            }
+            return (true, !events.isEmpty, nil)
+        } catch { return (false, false, error.localizedDescription) }
+    }
+}
+
 @MainActor
 final class ForegroundRecovery: ObservableObject {
     static let shared = ForegroundRecovery()
@@ -13,91 +32,269 @@ final class ForegroundRecovery: ObservableObject {
     @Published private(set) var registeredUsageIDs: Set<UUID> = []
     private var started = false
     private var running = false
-    private let queue = DispatchQueue(label: "name.amitsankaran.Block.foreground-recovery", qos: .userInitiated)
-
+    private var legacyRetirements: Set<String> = []
     private init() {}
 
+    func retireLegacy(_ names: [String]) { legacyRetirements.formUnion(names) }
     func start() {
         guard !started else { return }
         _ = ScreenTimeManager.shared
         started = true
-        request()
+        Task {
+            let lease = await acquireLease()
+            Migration.runIfNeeded()
+            BlockStore.shared.reload()
+            AppGroupStore.shared.reload()
+            lease.finish()
+            request()
+        }
     }
 
-    /// Coalesce view appearance, authorization and periodic refresh triggers.
-    /// There is no second worker, timeout retry, or main-thread wait on the lease.
     func request() {
         guard started, !running else { return }
-        guard ScreenTimeManager.shared.authorizationStatus == .approved else {
-            isChecking = false
-            return
-        }
+        guard SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
+        guard ScreenTimeManager.shared.authorizationStatus == .approved else { isChecking = false; return }
         BlockStore.shared.flush()
         AppGroupStore.shared.flush()
         running = true
         isChecking = true
-        queue.async {
-            let result = Self.reconcile()
-            Task { @MainActor in
-                self.registeredUsageIDs = result.usageIDs
-                SchedulingManager.shared.publishRecovery(errors: result.scheduleErrors)
-                UsageLimitManager.shared.refresh()
-                AdHocManager.shared.publishPersistedState()
-                BreakManager.shared.publishPersistedState()
-                self.running = false
-                self.isChecking = false
+        Task {
+            var attempted: Set<String> = []
+            var errors: [UUID: String] = [:]
+            var observed: Set<String> = []
+            // A second pass can rearm an allowance whose deadline crossed during
+            // IPC. Failed semantic operations are not blindly retried this run.
+            for _ in 0..<2 {
+                observed = await Task.detached { Self.observe() }.value
+                let lease = await acquireLease()
+                reconcileState()
+                let jobs = makePlan(observed: observed, attempted: &attempted)
+                lease.finish()
+                await retire(observed: observed)
+                for job in jobs {
+                    let before = await acquireLease()
+                    let valid = context(job.ticket.namespace) == job.ticket.owner.context
+                        && MonitorRegistration.pending(job.ticket.namespace)?.owner == job.ticket.owner
+                    before.finish()
+                    guard valid else {
+                        let lease = await acquireLease()
+                        _ = MonitorRegistration.finish(job.ticket, context: nil, succeeded: false)
+                        lease.finish()
+                        continue
+                    }
+                    let outcome = await Task.detached { job.execute() }.value
+                    let lease = await acquireLease()
+                    let currentContext = context(job.ticket.namespace)
+                    let result: MonitorLedger.Completion
+                    if job.ticket.namespace.hasPrefix("usage.") {
+                        result = UsageMonitoring.finishRegistration(job.ticket, context: currentContext, succeeded: outcome.succeeded)
+                    } else {
+                        result = MonitorRegistration.finish(job.ticket, context: currentContext, succeeded: outcome.succeeded)
+                    }
+                    if result == .promoted || result == .alreadyAccepted { observed.insert(job.ticket.name) }
+                    if result == .promoted || result == .alreadyAccepted, let id = Self.blockID(job.ticket.namespace) {
+                        if job.ticket.namespace.hasPrefix("usage.") { SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: id)) }
+                        if job.ticket.namespace.hasPrefix("lock.") || job.ticket.namespace.hasPrefix("adhoc.") {
+                            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: id))
+                        }
+                    }
+                    if result == .failed { publishFailure(job.ticket, detail: outcome.error, errors: &errors) }
+                    if result == .promoted, !outcome.reportsProgress, job.ticket.namespace.hasPrefix("usage."),
+                       let id = Self.blockID(job.ticket.namespace) {
+                        SharedDefaults.suite.removeObject(forKey: UsageProgress.key(id))
+                    }
+                    // Time can change ownership even without a saved-data edit.
+                    reconcileState()
+                    lease.finish()
+                    await retire(observed: observed)
+                }
+                if jobs.isEmpty { break }
             }
+            observed = await Task.detached { Self.observe() }.value
+            let lease = await acquireLease()
+            reconcileState()
+            registeredUsageIDs = Set(BlockResolution.loadBlocks().filter {
+                $0.type == .timer && SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: $0.id)) == nil
+                    && observed.contains(UsageMonitoring.usageActivityName(for: $0.id).rawValue)
+            }.map(\.id))
+            lease.finish()
+            SchedulingManager.shared.publishRecovery(errors: errors)
+            UsageLimitManager.shared.refresh()
+            AdHocManager.shared.publishPersistedState()
+            BreakManager.shared.publishPersistedState()
+            running = false
+            isChecking = false
         }
     }
 
-    private struct Result {
-        var usageIDs: Set<UUID> = []
-        var scheduleErrors: [UUID: String] = [:]
+    /// Never block MainActor acquiring a lease held by another process's IPC.
+    private func acquireLease() async -> EnforcementTransaction.Lease {
+        while true {
+            if let lease = EnforcementTransaction.begin(wait: false) { return lease }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+    nonisolated private static func observe() -> Set<String> {
+        precondition(!Thread.isMainThread)
+        return Set(DeviceActivityCenter().activities.map(\.rawValue))
+    }
+    nonisolated private static func stop(_ name: String) {
+        precondition(!Thread.isMainThread)
+        DeviceActivityCenter().stopMonitoring([DeviceActivityName(rawValue: name)])
+    }
+    private static func blockID(_ namespace: String) -> UUID? {
+        namespace.split(separator: ".").dropFirst().first.flatMap { UUID(uuidString: String($0)) }
     }
 
-    nonisolated private static func reconcile() -> Result {
-        precondition(!Thread.isMainThread)
-        var result = Result()
-        guard let lease = EnforcementTransaction.begin() else { return result }
-        defer { lease.finish() }
-        // Load under the cross-process lease, not from a captured UI snapshot.
-        let blocks = BlockResolution.loadBlocks()
-        let groups = BlockResolution.loadGroups()
-        let center = DeviceActivityCenter()
+    private func context(_ namespace: String) -> String? {
+        guard let id = Self.blockID(namespace) else { return nil }
         let defaults = SharedDefaults.suite
-        for block in blocks {
-            if block.type == .schedule, let schedule = block.schedule {
-                let name = DeviceActivityName(rawValue: "block.\(block.id.uuidString)")
-                if !center.activities.contains(name) {
-                    center.stopMonitoring([
-                        DeviceActivityName(rawValue: "block.\(block.id.uuidString).early"),
-                        DeviceActivityName(rawValue: "block.\(block.id.uuidString).late")
-                    ])
-                    do { try center.startMonitoring(name, during: schedule.deviceActivitySchedule()) }
-                    catch { result.scheduleErrors[block.id] = "Couldn’t start this schedule. \(error.localizedDescription)" }
-                }
-                ScheduleEnforcement.reconcile(block: block)
+        if namespace.hasPrefix("adhoc.") {
+            guard let session = AdHocMonitoring.session, session.id == id, session.endsAt > Date() else { return nil }
+            return AdHocMonitoring.registrationContext(session)
+        }
+        guard let block = BlockResolution.loadBlock(id: id) else { return nil }
+        if namespace.hasPrefix("block.") {
+            guard block.type == .schedule, let schedule = block.schedule else { return nil }
+            return ScheduleEnforcement.registrationContext(schedule)
+        }
+        if namespace.hasPrefix("usage.") {
+            guard defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) == nil else { return nil }
+            return UsageMonitoring.registrationContext(for: block, groups: BlockResolution.loadGroups())
+        }
+        if namespace.hasPrefix("lock."), let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as? Date, end > Date() {
+            return UsageMonitoring.lockContext(blockID: id, end: end)
+        }
+        if namespace.hasPrefix("break."), let end = BreakMonitoring.breakEnd(blockID: id), end > Date() {
+            return BreakMonitoring.registrationContext(blockID: id, end: end)
+        }
+        return nil
+    }
+
+    /// Pure state/shield helpers suppress all DeviceActivity calls in this lease.
+    private func reconcileState() {
+        let defaults = SharedDefaults.suite
+        let now = Date()
+        let groups = BlockResolution.loadGroups()
+        for block in BlockResolution.loadBlocks() {
+            if block.type == .schedule { ScheduleEnforcement.reconcile(block: block, now: now, stopMonitoring: false) }
+            if block.type == .timer, let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date {
+                if end <= now {
+                    UsageMonitoring.stopLockout(for: block.id, stopMonitoring: false)
+                    if !block.isEnabled { BlockingActuator.end(blockID: block.id, stopMonitoring: false) }
+                } else { BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups), blockID: block.id) }
             }
-            if block.type == .timer {
-                if defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) is Date {
-                    UsageMonitoring.reconcileLockout(blockID: block.id)
-                } else if UsageMonitoring.usageEvent(for: block, groups: groups) == nil {
-                    if UsageMonitoring.isUsageMonitorActive(for: block.id) { UsageMonitoring.stopUsageMonitor(for: block.id) }
-                    defaults.set("No measurable apps selected. Open Lists and select apps, categories or websites in the Screen Time picker. Typed website addresses alone cannot measure usage.", forKey: SharedDefaults.Keys.usageError(blockID: block.id))
-                } else if !UsageMonitoring.isUsageMonitorActive(for: block.id)
-                            || defaults.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) != nil {
-                    UsageMonitoring.startUsageMonitor(for: block, groups: groups)
-                }
-                if UsageMonitoring.isUsageMonitorActive(for: block.id) { result.usageIDs.insert(block.id) }
-            }
-            if BreakMonitoring.breakEnd(blockID: block.id) != nil {
-                BreakMonitoring.finishIfExpired(blockID: block.id)
+            if let end = BreakMonitoring.breakEnd(blockID: block.id), end <= now {
+                BreakMonitoring.endBreak(blockID: block.id, reapply: true, stopMonitoring: false)
             }
             if block.isEnabled && !BreakMonitoring.isOnBreak(blockID: block.id) {
                 BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups), blockID: block.id)
             }
         }
-        AdHocMonitoring.reconcile()
-        return result
+        if let session = AdHocMonitoring.session {
+            if session.endsAt <= now { AdHocMonitoring.finish(id: session.id, stopMonitoring: false) }
+            else { BlockingActuator.apply(tokens: session.tokens, blockID: session.id) }
+        }
+    }
+
+    private func makePlan(observed: Set<String>, attempted: inout Set<String>) -> [RecoveryJob] {
+        var jobs: [RecoveryJob] = []
+        let defaults = SharedDefaults.suite
+        func plan(_ namespace: String, legacy: String, schedule: DeviceActivitySchedule,
+                  events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:], fallback: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]) {
+            guard let semantic = context(namespace),
+                  let ledger = MonitorRegistration.load(namespace, legacyName: legacy, context: semantic) else { return }
+            if let pending = ledger.pending, pending.context == semantic, observed.contains(pending.name) {
+                let ticket = MonitorReservation(namespace: namespace, owner: pending)
+                if namespace.hasPrefix("usage.") { _ = UsageMonitoring.finishRegistration(ticket, context: semantic, succeeded: true) }
+                else { _ = MonitorRegistration.finish(ticket, context: semantic, succeeded: true) }
+                return
+            }
+            let legacySegmentsPresent = namespace.hasPrefix("block.") && ledger.confirmed?.name == namespace
+                && observed.contains(namespace + ".early") && observed.contains(namespace + ".late")
+            if let confirmed = ledger.confirmed, confirmed.context == semantic,
+               observed.contains(confirmed.name) || legacySegmentsPresent {
+                if let id = Self.blockID(namespace) {
+                    if namespace.hasPrefix("usage.") { defaults.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: id)) }
+                    if namespace.hasPrefix("lock.") || namespace.hasPrefix("adhoc.") { defaults.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: id)) }
+                }
+                return
+            }
+            guard attempted.insert(namespace + "|" + semantic).inserted,
+                  let ticket = MonitorRegistration.reserve(namespace, legacyName: legacy, context: semantic) else { return }
+            jobs.append(RecoveryJob(ticket: ticket, schedule: schedule, events: events, fallback: fallback))
+        }
+        for block in BlockResolution.loadBlocks() {
+            if block.type == .schedule, let schedule = block.schedule {
+                plan("block.\(block.id.uuidString)", legacy: "block.\(block.id.uuidString)", schedule: schedule.deviceActivitySchedule())
+            }
+            if block.type == .timer {
+                if let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date {
+                    plan("lock.\(block.id.uuidString)", legacy: "lock.\(block.id.uuidString)", schedule: deadlineSchedule(end))
+                } else if let event = UsageMonitoring.usageEvent(for: block, groups: BlockResolution.loadGroups()) {
+                    plan("usage.\(block.id.uuidString)", legacy: UsageMonitoring.legacyUsageName(block.id), schedule: UsageMonitoring.allDaySchedule,
+                         events: UsageMonitoring.progressEvents(for: block, limitEvent: event), fallback: [UsageMonitoring.usageEventName: event])
+                } else {
+                    MonitorRegistration.invalidate("usage.\(block.id.uuidString)", legacyName: UsageMonitoring.legacyUsageName(block.id))
+                    defaults.set("No measurable apps selected. Open Lists and select apps, categories or websites in the Screen Time picker. Typed website addresses alone cannot measure usage.", forKey: SharedDefaults.Keys.usageError(blockID: block.id))
+                }
+            }
+            if let end = BreakMonitoring.breakEnd(blockID: block.id) {
+                plan("break.\(block.id.uuidString)", legacy: "break.\(block.id.uuidString)", schedule: deadlineSchedule(end))
+            }
+        }
+        if let session = AdHocMonitoring.session {
+            plan("adhoc.\(session.id.uuidString)", legacy: "adhoc.\(session.id.uuidString)", schedule: deadlineSchedule(session.endsAt))
+        }
+        return jobs
+    }
+
+    private func deadlineSchedule(_ end: Date) -> DeviceActivitySchedule {
+        let start = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+        let monitorEnd = max(end, start.addingTimeInterval(900))
+        let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
+        let calendar = Calendar.current
+        return DeviceActivitySchedule(intervalStart: calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd), repeats: false,
+            warningTime: warning > 0 ? DateComponents(second: warning) : nil)
+    }
+
+    private func publishFailure(_ ticket: MonitorReservation, detail: String?, errors: inout [UUID: String]) {
+        guard let id = Self.blockID(ticket.namespace) else { return }
+        if ticket.namespace.hasPrefix("block.") { errors[id] = "Couldn’t start this schedule. \(detail ?? "")" }
+        if ticket.namespace.hasPrefix("usage.") { SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.", forKey: SharedDefaults.Keys.usageError(blockID: id)) }
+        if ticket.namespace.hasPrefix("lock.") || ticket.namespace.hasPrefix("adhoc.") { SharedDefaults.suite.set("Automatic end could not be restored. Open Tyri at the end of this session.", forKey: SharedDefaults.Keys.usageLockError(blockID: id)) }
+        if ticket.namespace.hasPrefix("break.") {
+            BreakMonitoring.endBreak(blockID: id, reapply: true, stopMonitoring: false)
+            BreakManager.shared.lastError = "Your break ended because its automatic re-lock could not be restored. Blocking is back on."
+        }
+    }
+
+    private func retire(observed: Set<String>) async {
+        let lease = await acquireLease()
+        for key in SharedDefaults.suite.dictionaryRepresentation().keys where key.hasPrefix(MonitorRegistration.prefix) {
+            let namespace = String(key.dropFirst(MonitorRegistration.prefix.count))
+            if context(namespace) == nil { MonitorRegistration.invalidate(namespace, legacyName: namespace) }
+        }
+        for name in observed {
+            let parts = name.split(separator: ".")
+            guard parts.count >= 2, ["block", "usage", "lock", "break", "adhoc"].contains(String(parts[0])),
+                  let id = UUID(uuidString: String(parts[1])), BlockResolution.loadBlock(id: id) == nil,
+                  AdHocMonitoring.session?.id != id else { continue }
+            let namespace = parts.prefix(2).joined(separator: ".")
+            MonitorRegistration.invalidate(namespace, legacyName: name)
+        }
+        var names = MonitorRegistration.retirementNames(observed: observed)
+        names.formUnion(legacyRetirements)
+        // A migrated app can rediscover old preset monitors after a crash.
+        for name in observed where name.hasPrefix("preset.") {
+            if Self.blockID(name) != nil { names.insert(name) }
+        }
+        lease.finish()
+        for name in names { await Task.detached { Self.stop(name) }.value }
+        let acknowledgement = await acquireLease()
+        MonitorRegistration.acknowledgeRetired(names)
+        acknowledgement.finish()
+        legacyRetirements.subtract(names)
     }
 }

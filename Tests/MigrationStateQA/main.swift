@@ -4,7 +4,8 @@ enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-migration-\(U
 struct ManagedSettingsStore {struct Name{var rawValue:String};init(){};init(named:Name){};func clearAllSettings(){}}
 struct DeviceActivityName {var rawValue:String}
 struct DeviceActivityCenter {func stopMonitoring(_ names:[DeviceActivityName]){}}
-enum BlockingActuator {@discardableResult static func start(blockID:UUID,bypassWeekday:Bool,setRunningFlag:Bool)->Bool{true}}
+enum BlockingActuator {@discardableResult static func start(blockID:UUID,bypassWeekday:Bool,setRunningFlag:Bool,resetBreakAllowance:Bool = true)->Bool{true}}
+@MainActor final class ForegroundRecovery {static let shared=ForegroundRecovery();func retireLegacy(_ names:[String]){}}
 @MainActor class AppConfigurationStore {static let shared=AppConfigurationStore();var selectedApps=FamilyActivitySelection();var isBlockingEnabled=false}
 @MainActor class AppGroupStore {static let shared=AppGroupStore();var groups:[AppGroup]=[];func replaceAll(_ v:[AppGroup]){groups=v}}
 @MainActor class BlockStore {static let shared=BlockStore();var blocks:[BlockRule]=[];func replaceAll(_ v:[BlockRule]){blocks=v}}

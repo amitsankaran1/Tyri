@@ -2,64 +2,37 @@ import Foundation
 
 protocol ObservableObject {}
 @propertyWrapper struct Published<Value> { var wrappedValue: Value }
-struct DeviceActivityName: Hashable { var rawValue: String }
-struct Schedule { func deviceActivitySchedule() -> Int { 0 } }
-struct BlockRule {
-    enum Kind { case schedule, timer, tag }
-    let id = UUID()
-    var type: Kind = .timer
-    var schedule: Schedule? = nil
-    var isEnabled = false
-}
 enum Probe {
-    static let lock = NSLock()
+    static let mutex = NSLock()
     static let release = DispatchSemaphore(value: 0)
     private static var entered = false
-    static var didEnter: Bool { lock.lock(); defer { lock.unlock() }; return entered }
-    static func waitForIPC() {
-        precondition(!Thread.isMainThread, "DeviceActivity must not run on main")
-        lock.lock(); entered = true; lock.unlock()
-        precondition(release.wait(timeout: .now() + 10) == .success)
+    private static var prefix = ""
+    private static var shouldFail = false
+    static var didEnter: Bool { mutex.lock(); defer { mutex.unlock() }; return entered }
+    static func prepare(_ value: String, fail: Bool = false) {
+        mutex.lock(); entered = false; prefix = value; shouldFail = fail; mutex.unlock()
+    }
+    static func afterStart(_ name: DeviceActivityName) throws {
+        mutex.lock()
+        let matches = name.rawValue.hasPrefix(prefix) && !prefix.isEmpty
+        let pause = matches && !entered
+        if pause { entered = true }
+        let fail = matches && shouldFail
+        mutex.unlock()
+        if pause {
+            precondition(!Thread.isMainThread, "Automatic native registration must run off main")
+            precondition(release.wait(timeout: .now() + 10) == .success)
+        }
+        if fail { throw NSError(domain: "late-registration-failure", code: 1) }
     }
 }
-struct DeviceActivityCenter {
-    var activities: [DeviceActivityName] { [] }
-    func startMonitoring(_ name: DeviceActivityName, during schedule: Int) throws {}
-    func stopMonitoring(_ names: [DeviceActivityName]) {}
-}
-enum SharedDefaults {
-    static let suite = UserDefaults(suiteName: "tyri-recovery-\(UUID())")!
-    enum Keys {
-        static func usageLockEnd(blockID: UUID) -> String { "lock.\(blockID)" }
-        static func usageError(blockID: UUID) -> String { "error.\(blockID)" }
+extension SharedDefaults.Keys { static let migratedToBlocksV2 = "migration" }
+extension BlockResolution { static func loadBlocks() -> [BlockRule] { Array(blocks.values) } }
+extension BlockingSchedule {
+    func deviceActivitySchedule() -> DeviceActivitySchedule {
+        DeviceActivitySchedule(intervalStart: DateComponents(hour: 0), intervalEnd: DateComponents(hour: 23), repeats: true)
     }
 }
-enum EnforcementTransaction {
-    static let lock = NSRecursiveLock()
-    final class Lease { func finish() { lock.unlock() } }
-    static func begin() -> Lease? { precondition(!Thread.isMainThread); lock.lock(); return Lease() }
-}
-enum BlockResolution {
-    static let block = BlockRule()
-    static func loadBlocks() -> [BlockRule] { [block] }
-    static func loadGroups() -> [Int] { [] }
-    static func tokens(for block: BlockRule, groups: [Int]) -> Int { 0 }
-}
-enum UsageMonitoring {
-    static func reconcileLockout(blockID: UUID) {}
-    static func usageEvent(for block: BlockRule, groups: [Int]) -> Int? { 1 }
-    static func isUsageMonitorActive(for id: UUID) -> Bool { Probe.waitForIPC(); return true }
-    static func stopUsageMonitor(for id: UUID) {}
-    static func startUsageMonitor(for block: BlockRule, groups: [Int]) {}
-}
-enum ScheduleEnforcement { static func reconcile(block: BlockRule) {} }
-enum BreakMonitoring {
-    static func breakEnd(blockID: UUID) -> Date? { nil }
-    static func finishIfExpired(blockID: UUID) {}
-    static func isOnBreak(blockID: UUID) -> Bool { false }
-}
-enum BlockingActuator { static func apply(tokens: Int, blockID: UUID) {} }
-enum AdHocMonitoring { static func reconcile() {} }
 @MainActor final class ScreenTimeManager {
     enum Authorization { case approved }
     static let shared = ScreenTimeManager()
@@ -67,43 +40,101 @@ enum AdHocMonitoring { static func reconcile() {} }
 }
 @MainActor final class BlockStore {
     static let shared = BlockStore()
-    var flushes = 0
-    func flush() { flushes += 1 }
+    func flush() {}
+    func reload() {}
 }
-@MainActor final class AppGroupStore { static let shared = AppGroupStore(); func flush() {} }
+@MainActor final class AppGroupStore {
+    static let shared = AppGroupStore()
+    func flush() {}
+    func reload() {}
+}
+@MainActor enum Migration {
+    static var runs = 0
+    static func runIfNeeded() {
+        guard !SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
+        runs += 1
+        SharedDefaults.suite.set(true, forKey: SharedDefaults.Keys.migratedToBlocksV2)
+    }
+}
 @MainActor final class SchedulingManager {
     static let shared = SchedulingManager()
-    var publications = 0
-    func publishRecovery(errors: [UUID: String]) { publications += 1 }
+    func publishRecovery(errors: [UUID: String]) {}
 }
 @MainActor final class UsageLimitManager { static let shared = UsageLimitManager(); func refresh() {} }
 @MainActor final class AdHocManager { static let shared = AdHocManager(); func publishPersistedState() {} }
-@MainActor final class BreakManager { static let shared = BreakManager(); func publishPersistedState() {} }
+@MainActor final class BreakManager {
+    static let shared = BreakManager()
+    var lastError: String?
+    func publishPersistedState() {}
+}
 
 @main struct Tests {
+    @MainActor static func wait(_ predicate: () -> Bool) async throws {
+        for _ in 0..<500 {
+            if predicate() { return }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        preconditionFailure("Timed out waiting for deterministic worker checkpoint")
+    }
     @MainActor static func main() async throws {
         let recovery = ForegroundRecovery.shared
-        recovery.request() // View construction before startup must not run IPC.
-        precondition(BlockStore.shared.flushes == 0)
-        recovery.start()
-        for _ in 0..<100 where !Probe.didEnter { try await Task.sleep(nanoseconds: 10_000_000) }
-        precondition(Probe.didEnter, "The worker must exercise the stalled monitoring call")
-        precondition(recovery.isChecking, "Unconfirmed monitoring must remain visibly pending")
-        // This MainActor heartbeat runs while synchronous monitoring is stalled.
-        var heartbeat = 0
-        for _ in 0..<5 {
-            try await Task.sleep(nanoseconds: 10_000_000)
-            heartbeat += 1
-            recovery.request()
+        recovery.request()
+        precondition(!SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2))
+        let held = DispatchSemaphore(value: 0), unlock = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let lease = EnforcementTransaction.begin()!
+            held.signal(); unlock.wait(); lease.finish()
         }
-        precondition(heartbeat == 5 && BlockStore.shared.flushes == 1, "Refreshes must coalesce without blocking MainActor")
-        precondition(SchedulingManager.shared.publications == 0, "Do not publish success before IPC returns")
-        // There are two registration reads in this timer path.
-        Probe.release.signal(); Probe.release.signal()
-        for _ in 0..<100 where recovery.isChecking { try await Task.sleep(nanoseconds: 10_000_000) }
-        precondition(!recovery.isChecking)
-        precondition(recovery.registeredUsageIDs == [BlockResolution.block.id])
-        precondition(SchedulingManager.shared.publications == 1)
-        print("PASS: production recovery keeps MainActor responsive during stalled IPC, coalesces triggers, and publishes only after completion")
+        held.wait()
+        for failure in [false, true] {
+            let id = UUID()
+            BlockResolution.blocks[id] = BlockRule(id: id)
+            Probe.prepare("usage.\(id.uuidString)", fail: failure)
+            if Migration.runs == 0 {
+                recovery.start()
+                for _ in 0..<5 { try await Task.sleep(nanoseconds: 10_000_000) }
+                precondition(Migration.runs == 0, "Contended migration blocked or stole the lease")
+                unlock.signal()
+            } else { recovery.request() }
+            try await wait { Probe.didEnter }
+            // Both the UI heartbeat and a callback's lease acquisition remain
+            // available while native IPC is stalled in the recovery worker.
+            for _ in 0..<5 { try await Task.sleep(nanoseconds: 10_000_000) }
+            guard let lease = EnforcementTransaction.begin(wait: false) else {
+                preconditionFailure("Stalled native IPC retained the enforcement lease")
+            }
+            let pending = MonitorRegistration.pending("usage.\(id.uuidString)")!
+            lease.finish()
+            let monitor = TyriMonitorExtension()
+            monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: DeviceActivityName(rawValue: pending.name))
+            let deadline = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as! Date
+            precondition(State.shields.contains(id))
+            let progress = UsageProgress.reported(blockID: id)
+            Probe.release.signal()
+            try await wait { !recovery.isChecking }
+            precondition(SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as? Date == deadline,
+                         "Late registration completion changed a consumed allowance's fixed lock deadline")
+            precondition(UsageProgress.reported(blockID: id) == progress, "Late commit reset callback progress")
+            precondition(!DeviceActivityCenter().activities.contains(DeviceActivityName(rawValue: pending.name)),
+                         "Late completion resurrected the consumed monitor")
+            print("PASS: stalled IPC releases lease/MainActor; early threshold survives late \(failure ? "failure" : "success")")
+        }
+        let tag = UUID()
+        BlockResolution.blocks[tag] = BlockRule(id: tag, type: .tag, isEnabled: true)
+        let end = Date(timeIntervalSince1970: floor(QAClock.now.timeIntervalSince1970) + 5)
+        SharedDefaults.suite.set(end, forKey: SharedDefaults.Keys.breakEnd(blockID: tag))
+        SharedDefaults.suite.set(true, forKey: SharedDefaults.Keys.breakUsed(blockID: tag))
+        Probe.prepare("break.\(tag.uuidString)")
+        recovery.request()
+        try await wait { Probe.didEnter }
+        QAClock.now = end.addingTimeInterval(1)
+        Probe.release.signal()
+        try await wait { !recovery.isChecking }
+        precondition(BreakMonitoring.breakEnd(blockID: tag) == nil && State.shields.contains(tag),
+                     "Deadline crossing during IPC failed to restore protection in the same cycle")
+        precondition(BreakMonitoring.breakUsed(blockID: tag), "Recovery renewed the break allowance")
+        precondition(Migration.runs == 1)
+        print("PASS: break deadline crossing re-shields in the same cycle and retains its used allowance")
+        print("PASS: migration retries after lease contention exactly once without blocking MainActor")
     }
 }

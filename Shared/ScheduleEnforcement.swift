@@ -3,6 +3,9 @@ import Foundation
 /// Shared by foreground recovery and extension callbacks. Callback delivery order
 /// is not schedule state: stopping/replacing a monitor can deliver a stale end.
 enum ScheduleEnforcement {
+    static func registrationContext(_ schedule: BlockingSchedule) -> String {
+        "\(schedule.startHour):\(schedule.startMinute)-\(schedule.endHour):\(schedule.endMinute)|\(schedule.weekdays.sorted())|\(schedule.repeats)"
+    }
     static func releaseCurrentWindow(block: BlockRule, now: Date = Date()) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
@@ -19,7 +22,7 @@ enum ScheduleEnforcement {
         reconcile(block: block, now: now)
     }
 
-    static func reconcile(block: BlockRule, now: Date = Date()) {
+    static func reconcile(block: BlockRule, now: Date = Date(), stopMonitoring: Bool = true) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
@@ -37,7 +40,7 @@ enum ScheduleEnforcement {
             // Adopt an existing activation on upgrade without cancelling its break.
             if previousStart != window.start &&
                 !(previousStart == nil && defaults.bool(forKey: runningKey)) {
-                BreakMonitoring.resetAllowance(blockID: block.id)
+                BreakMonitoring.resetAllowance(blockID: block.id, stopMonitoring: stopMonitoring)
             }
             defaults.set(window.start, forKey: windowKey)
             defaults.set(true, forKey: runningKey)
@@ -47,7 +50,7 @@ enum ScheduleEnforcement {
             }
         } else {
             if defaults.bool(forKey: runningKey) || defaults.object(forKey: windowKey) != nil {
-                BreakMonitoring.resetAllowance(blockID: block.id)
+                BreakMonitoring.resetAllowance(blockID: block.id, stopMonitoring: stopMonitoring)
             }
             defaults.removeObject(forKey: runningKey)
             defaults.removeObject(forKey: windowKey)

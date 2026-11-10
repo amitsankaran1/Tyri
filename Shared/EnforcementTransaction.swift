@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 
 /// Serializes app/extension transitions, including their shield and monitor writes.
 /// An actor or NSLock alone cannot protect the other process. The recursive local
@@ -39,14 +43,15 @@ enum EnforcementTransaction {
     }
 
     /// Failure leaves enforcement unchanged. Never fall back to an unlocked write.
-    static func begin() -> Lease? {
-        mutex.lock()
+    static func begin(wait: Bool = true) -> Lease? {
+        if wait { mutex.lock() }
+        else if !mutex.try() { return nil }
         if depth == 0 {
             guard let url = lockURL else { mutex.unlock(); return nil }
             let fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
             guard fd >= 0 else { mutex.unlock(); return nil }
             var result: Int32
-            repeat { result = flock(fd, LOCK_EX) } while result != 0 && errno == EINTR
+            repeat { result = flock(fd, wait ? LOCK_EX : LOCK_EX | LOCK_NB) } while result != 0 && errno == EINTR
             guard result == 0 else { close(fd); mutex.unlock(); return nil }
             descriptor = fd
             SharedDefaults.suite.synchronize()

@@ -30,7 +30,9 @@ class SchedulingManager: ObservableObject {
 
     static func activityName(for blockID: UUID, segment: BlockingSchedule.CrossingSegment = .full) -> DeviceActivityName {
         switch segment {
-        case .full:  return DeviceActivityName(rawValue: "block.\(blockID.uuidString)")
+        case .full:
+            let base = "block.\(blockID.uuidString)"
+            return DeviceActivityName(rawValue: MonitorRegistration.current(base, legacyName: base))
         case .early: return DeviceActivityName(rawValue: "block.\(blockID.uuidString).early")
         case .late:  return DeviceActivityName(rawValue: "block.\(blockID.uuidString).late")
         }
@@ -57,15 +59,34 @@ class SchedulingManager: ObservableObject {
             return true
         }
 
+        let base = "block.\(block.id.uuidString)"
+        let context = ScheduleEnforcement.registrationContext(schedule)
+        guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { return false }
+        let obsolete = MonitorRegistration.retirementNames(observed: Set(center.activities.map(\.rawValue)))
+        if !obsolete.isEmpty {
+            center.stopMonitoring(obsolete.map { DeviceActivityName(rawValue: $0) })
+            MonitorRegistration.acknowledgeRetired(obsolete)
+        }
+        if center.activities.count >= 20 {
+            // A replacement needs a slot too. Retire only this schedule's
+            // previous owner, matching the existing replacement-at-capacity rule.
+            let previous = Self.activityName(for: block.id)
+            center.stopMonitoring([previous])
+        }
         do {
-            try center.startMonitoring(Self.activityName(for: block.id),
+            try center.startMonitoring(DeviceActivityName(rawValue: ticket.name),
                                        during: schedule.deviceActivitySchedule())
+            _ = MonitorRegistration.finish(ticket, context: context, succeeded: true)
+            let retired = MonitorRegistration.retirementNames(observed: Set(center.activities.map(\.rawValue)))
+            center.stopMonitoring(retired.map { DeviceActivityName(rawValue: $0) })
+            MonitorRegistration.acknowledgeRetired(retired)
             registrationErrors.removeValue(forKey: block.id)
             #if DEBUG
             DebugLog.shared.log(.deviceActivity, "applySchedule(\(block.name)): \(schedule.summary)")
             #endif
             return true
         } catch {
+            _ = MonitorRegistration.finish(ticket, context: context, succeeded: false)
             print("❌ startMonitoring failed for block \(block.id): \(error)")
             registrationErrors[block.id] = "Couldn’t start this schedule. \(error.localizedDescription)"
             #if DEBUG
@@ -85,6 +106,7 @@ class SchedulingManager: ObservableObject {
             Self.activityName(for: block.id, segment: .early),
             Self.activityName(for: block.id, segment: .late)
         ]
+        MonitorRegistration.invalidate("block.\(block.id.uuidString)", legacyName: "block.\(block.id.uuidString)")
         center.stopMonitoring(names)
         // Also clear the running flag — if the schedule is removed mid-window,
         // the extension won't fire intervalDidEnd, so we must clean up.

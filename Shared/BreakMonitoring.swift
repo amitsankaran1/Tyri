@@ -20,7 +20,15 @@ enum BreakMonitoring {
 
     /// One-shot window spanning the break; its `intervalDidEnd` re-applies the shield.
     static func breakActivityName(for blockID: UUID) -> DeviceActivityName {
-        DeviceActivityName(rawValue: "break.\(blockID.uuidString)")
+        let base = "break.\(blockID.uuidString)"
+        return DeviceActivityName(rawValue: MonitorRegistration.current(base, legacyName: base))
+    }
+
+    static func registrationContext(blockID: UUID, end: Date) -> String {
+        let defaults = SharedDefaults.suite
+        return String(end.timeIntervalSince1970.bitPattern, radix: 16) + "|"
+            + (defaults.string(forKey: "manualActivation.\(blockID.uuidString)") ?? "legacy") + "|"
+            + String((defaults.object(forKey: "scheduleWindowStart.\(blockID.uuidString)") as? Date)?.timeIntervalSince1970 ?? 0)
     }
 
     /// Is the block currently on a break (a future `breakEnd` is the source of truth)?
@@ -63,14 +71,19 @@ enum BreakMonitoring {
             repeats: false,
             warningTime: minutes < 15 ? DateComponents(minute: 15 - max(1, minutes)) : nil
         )
+        let base = "break.\(blockID.uuidString)"
+        let context = registrationContext(blockID: blockID, end: end)
+        guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { return false }
         do {
-            try DeviceActivityCenter().startMonitoring(breakActivityName(for: blockID), during: schedule)
+            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
         } catch {
+            _ = MonitorRegistration.finish(ticket, context: context, succeeded: false)
             print("❌ startBreak monitoring failed for \(blockID): \(error)")
             return false
         }
         SharedDefaults.suite.set(end, forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
         SharedDefaults.suite.set(true, forKey: SharedDefaults.Keys.breakUsed(blockID: blockID))
+        _ = MonitorRegistration.finish(ticket, context: context, succeeded: true)
 
         BlockingActuator.clearShields(blockID: blockID)
         return true
@@ -91,8 +104,15 @@ enum BreakMonitoring {
             intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
             intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
             repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
-        do { try DeviceActivityCenter().startMonitoring(breakActivityName(for: blockID), during: schedule) }
+        let base = "break.\(blockID.uuidString)"
+        let context = registrationContext(blockID: blockID, end: end)
+        guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { return }
+        do {
+            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+            _ = MonitorRegistration.finish(ticket, context: context, succeeded: true)
+        }
         catch {
+            _ = MonitorRegistration.finish(ticket, context: context, succeeded: false)
             // Never leave an unbounded pause if its automatic re-lock is lost.
             endBreak(blockID: blockID, reapply: true)
         }
@@ -104,16 +124,18 @@ enum BreakMonitoring {
     /// that ended or a tag toggled off during the break must stay released.
     /// `breakUsed` is intentionally NOT cleared here — the allowance resets only
     /// when a fresh activation starts.
-    static func endBreak(blockID: UUID, reapply: Bool) {
+    static func endBreak(blockID: UUID, reapply: Bool, stopMonitoring: Bool = true) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
+        let activity = breakActivityName(for: blockID)
+        MonitorRegistration.invalidate("break.\(blockID.uuidString)", legacyName: "break.\(blockID.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
-        DeviceActivityCenter().stopMonitoring([breakActivityName(for: blockID)])
+        if stopMonitoring { DeviceActivityCenter().stopMonitoring([activity]) }
         guard reapply else { return }
 
         if let block = BlockResolution.loadBlock(id: blockID), block.type == .schedule {
-            ScheduleEnforcement.reconcile(block: block)
+            ScheduleEnforcement.reconcile(block: block, stopMonitoring: stopMonitoring)
             return
         }
         let running = SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID))
@@ -129,11 +151,11 @@ enum BreakMonitoring {
 
     /// Cancel any break state without re-shielding (window end, tag toggle-off,
     /// emergency override) and re-arm the activation's break allowance.
-    static func resetAllowance(blockID: UUID) {
+    static func resetAllowance(blockID: UUID, stopMonitoring: Bool = true) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
-        endBreak(blockID: blockID, reapply: false)
+        endBreak(blockID: blockID, reapply: false, stopMonitoring: stopMonitoring)
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.breakUsed(blockID: blockID))
     }
 }

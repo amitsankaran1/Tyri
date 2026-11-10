@@ -13,7 +13,7 @@ struct DeviceActivityCenter {
     var activities: [DeviceActivityName] { Array(Self.registered) }
     static var failNext = false
     func startMonitoring(_ name: DeviceActivityName, during: DeviceActivitySchedule) throws {
-        if Self.failNext { Self.failNext = false; throw NSError(domain: "QA", code: 1) }
+        if Self.failNext || (!Self.registered.contains(name) && Self.registered.count >= 20) { Self.failNext = false; throw NSError(domain: "QA", code: 1) }
         Self.starts += 1; Self.registered.insert(name)
     }
     func stopMonitoring(_ names: [DeviceActivityName]) { for n in names { Self.registered.remove(n) } }
@@ -37,7 +37,10 @@ enum SharedDefaults {
         static func scheduleReleasedUntil(blockID: UUID) -> String { "release.\(blockID)" }
     }
 }
-enum ScheduleEnforcement { static func reconcile(block: BlockRule) {} }
+enum ScheduleEnforcement {
+    static func reconcile(block: BlockRule) {}
+    static func registrationContext(_ schedule: BlockingSchedule) -> String { "schedule" }
+}
 @MainActor final class BlockStore {
     static let shared = BlockStore()
     var blocks: [BlockRule] = []
@@ -65,6 +68,11 @@ enum ScheduleEnforcement { static func reconcile(block: BlockRule) {} }
         let starts = DeviceActivityCenter.starts
         manager.repairMissingSchedules()
         precondition(DeviceActivityCenter.starts == starts, "Healthy schedules must not reset on foreground")
-        print("10 schedule error/recovery checks passed against production manager with OS doubles")
+        for _ in 0..<30 { precondition(manager.applySchedule(for: first)) }
+        precondition(DeviceActivityCenter.registered.count == 2, "Repeated saves leaked retired schedule registrations")
+        for i in 0..<18 { DeviceActivityCenter.registered.insert(DeviceActivityName(rawValue: "other.\(i)")) }
+        precondition(manager.applySchedule(for: first), "Replacement at capacity must reuse its previous owner's slot")
+        precondition(DeviceActivityCenter.registered.count == 20)
+        print("PASS: schedule error/recovery, repeated saves and replacement at 20-activity capacity against production manager")
     }
 }

@@ -24,12 +24,49 @@ enum UsageMonitoring {
 
     /// All-day counting window carrying the cumulative-usage threshold event.
     static func usageActivityName(for blockID: UUID) -> DeviceActivityName {
-        DeviceActivityName(rawValue: "usage.\(blockID.uuidString)" + (SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID)).map { "." + $0 } ?? ""))
+        DeviceActivityName(rawValue: MonitorRegistration.current("usage.\(blockID.uuidString)", legacyName: legacyUsageName(blockID)))
+    }
+
+    static func legacyUsageName(_ id: UUID) -> String {
+        "usage.\(id.uuidString)" + (SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: id)).map { "." + $0 } ?? "")
+    }
+
+    static func registrationContext(for block: BlockRule, groups: [AppGroup]) -> String? {
+        guard usageEvent(for: block, groups: groups) != nil else { return nil }
+        let tokens = BlockResolution.tokens(for: block, groups: groups)
+        return "\(block.usageLimitMinutes ?? 0)|" + tokenIdentity(tokens.apps) + "|" + tokenIdentity(tokens.categories) + "|" + tokenIdentity(tokens.webDomains)
+    }
+
+    private static func tokenIdentity<T: Encodable & Hashable>(_ tokens: Set<T>) -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        return tokens.compactMap { try? encoder.encode($0).base64EncodedString() }.sorted().joined(separator: ",")
+    }
+
+    @discardableResult
+    static func finishRegistration(_ ticket: MonitorReservation, context: String?, succeeded: Bool) -> MonitorLedger.Completion {
+        let result = MonitorRegistration.finish(ticket, context: context, succeeded: succeeded)
+        if result == .promoted, let id = UUID(uuidString: String(ticket.namespace.dropFirst("usage.".count))) {
+            publishGeneration(ticket.name, blockID: id)
+        }
+        return result
+    }
+
+    private static func publishGeneration(_ name: String, blockID: UUID) {
+        SharedDefaults.suite.set(String(name.dropFirst("usage.\(blockID.uuidString).".count)), forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID))
+        UsageProgress.record(0, blockID: blockID, reset: true)
+    }
+
+    static func acceptRegistration(_ name: String, for block: BlockRule, groups: [AppGroup]) -> Bool {
+        let namespace = "usage.\(block.id.uuidString)"
+        let result = MonitorRegistration.accept(name, namespace: namespace, legacyName: legacyUsageName(block.id), context: registrationContext(for: block, groups: groups))
+        if result == .promoted { publishGeneration(name, blockID: block.id) }
+        return result == .promoted || result == .alreadyAccepted
     }
 
     /// One-shot lockout window registered once the threshold is reached.
     static func lockActivityName(for blockID: UUID) -> DeviceActivityName {
-        DeviceActivityName(rawValue: "lock.\(blockID.uuidString)")
+        let base = "lock.\(blockID.uuidString)"
+        return DeviceActivityName(rawValue: MonitorRegistration.current(base, legacyName: base))
     }
 
     static let usageEventName = DeviceActivityEvent.Name(rawValue: "limit")
@@ -65,7 +102,7 @@ enum UsageMonitoring {
         )
     }
 
-    private static func progressEvents(for block: BlockRule, limitEvent: DeviceActivityEvent) -> [DeviceActivityEvent.Name: DeviceActivityEvent] {
+    static func progressEvents(for block: BlockRule, limitEvent: DeviceActivityEvent) -> [DeviceActivityEvent.Name: DeviceActivityEvent] {
         var events = [usageEventName: limitEvent]
         for minute in UsageProgress.milestones(for: block.usageLimitMinutes ?? 0) {
             let event: DeviceActivityEvent
@@ -94,12 +131,11 @@ enum UsageMonitoring {
         guard let event = usageEvent(for: block, groups: groups) else { return false }
         let center = DeviceActivityCenter()
         let oldActivities = center.activities.filter { $0.rawValue == "usage.\(block.id.uuidString)" || $0.rawValue.hasPrefix("usage.\(block.id.uuidString).") }
-        let key = SharedDefaults.Keys.usageGeneration(blockID: block.id)
-        let previous = SharedDefaults.suite.string(forKey: key)
+        guard let context = registrationContext(for: block, groups: groups),
+              let ticket = MonitorRegistration.reserve("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context) else { return false }
         // Each allowance gets a new identity: a delivered threshold from an old
         // allowance cannot consume the next one, and iOS gets a fresh event counter.
-        SharedDefaults.suite.set(UUID().uuidString, forKey: key)
-        let activity = usageActivityName(for: block.id)
+        let activity = DeviceActivityName(rawValue: ticket.name)
         // A replacement needs a slot too. At the activity ceiling, retaining the
         // old generation makes every retry fail forever. This call intentionally
         // starts a fresh allowance; retire the old one only when space is needed.
@@ -116,16 +152,16 @@ enum UsageMonitoring {
                 try center.startMonitoring(activity, during: allDaySchedule, events: [usageEventName: event])
                 reportsProgress = false
             }
-            if reportsProgress { UsageProgress.record(0, blockID: block.id, reset: true) }
-            else { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
+            let accepted = finishRegistration(ticket, context: context, succeeded: true)
+            guard accepted == .promoted || accepted == .alreadyAccepted else { center.stopMonitoring([activity]); return false }
+            if !reportsProgress && accepted == .promoted { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
             center.stopMonitoring(oldActivities)
             EnforcementDiagnostics.record("registration", blockID: block.id, detail: "Registered allowance; progress events: \(reportsProgress)")
             log.notice("Registered allowance \(activity.rawValue, privacy: .public)")
             SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: block.id))
             return true
         } catch {
-            if let previous { SharedDefaults.suite.set(previous, forKey: key) }
-            else { SharedDefaults.suite.removeObject(forKey: key) }
+            _ = finishRegistration(ticket, context: context, succeeded: false)
             SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",
                                      forKey: SharedDefaults.Keys.usageError(blockID: block.id))
             EnforcementDiagnostics.record("registration", blockID: block.id, detail: "FAILED: \(error.localizedDescription)")
@@ -149,6 +185,7 @@ enum UsageMonitoring {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
+        MonitorRegistration.invalidate("usage.\(blockID.uuidString)", legacyName: legacyUsageName(blockID))
         let center = DeviceActivityCenter()
         center.stopMonitoring(center.activities.filter {
             $0.rawValue == "usage.\(blockID.uuidString)" || $0.rawValue.hasPrefix("usage.\(blockID.uuidString).")
@@ -199,10 +236,14 @@ enum UsageMonitoring {
             intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
             repeats: false, warningTime: warning > 0 ? DateComponents(second: Int(ceil(warning))) : nil
         )
+        let base = "lock.\(blockID.uuidString)"
+        guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: lockContext(blockID: blockID, end: end)) else { return }
         do {
-            try DeviceActivityCenter().startMonitoring(lockActivityName(for: blockID), during: schedule)
+            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+            _ = MonitorRegistration.finish(ticket, context: lockContext(blockID: blockID, end: end), succeeded: true)
             SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
         } catch {
+            _ = MonitorRegistration.finish(ticket, context: lockContext(blockID: blockID, end: end), succeeded: false)
             SharedDefaults.suite.set("Blocking is on, but its automatic end couldn't be registered. Open Tyri to retry.",
                                      forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
             print("❌ startLockout failed for \(blockID): \(error)")
@@ -237,12 +278,18 @@ enum UsageMonitoring {
     }
 
     /// Stop the lockout window and clear its persisted end-time.
-    static func stopLockout(for blockID: UUID) {
+    static func stopLockout(for blockID: UUID, stopMonitoring: Bool = true) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
+        let activity = lockActivityName(for: blockID)
+        MonitorRegistration.invalidate("lock.\(blockID.uuidString)", legacyName: "lock.\(blockID.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID))
-        DeviceActivityCenter().stopMonitoring([lockActivityName(for: blockID)])
+        if stopMonitoring { DeviceActivityCenter().stopMonitoring([activity]) }
+    }
+
+    static func lockContext(blockID: UUID, end: Date) -> String {
+        String(end.timeIntervalSince1970.bitPattern, radix: 16) + "|" + (SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID)) ?? "legacy")
     }
 }
