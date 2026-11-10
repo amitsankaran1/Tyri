@@ -51,6 +51,9 @@ class CooldownManager: ObservableObject {
     /// Zero minutes means "no cooldown = no early disable", so a cooldown must never
     /// start for it — the disable path simply doesn't exist for those blocks.
     func start(for blockID: UUID, minutes: Int) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard minutes >= 1, let identity = activationIdentity(blockID: blockID) else { return }
         cancel()
         let endsAt = Date().addingTimeInterval(TimeInterval(minutes * 60))
@@ -87,6 +90,9 @@ class CooldownManager: ObservableObject {
     /// Releases the preset's shield once the cooldown ends.
     /// The schedule remains registered — the next interval will re-shield.
     func complete() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard let active = activeCooldown, active.endsAt <= Date() else { return }
         guard let identity = activationIdentity(blockID: active.blockID),
               defaults.string(forKey: SharedDefaults.Keys.cooldownActivation(blockID: active.blockID)) == identity else {

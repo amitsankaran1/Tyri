@@ -39,11 +39,23 @@ class UsageLimitManager: ObservableObject {
     ///   (launch), leave an already-running monitor untouched so the day's
     ///   accumulated usage isn't wiped just by reopening the app.
     func applyUsageLimit(for block: BlockRule, forceReset: Bool = true) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
+        // A live lock owns the cycle until expiry. Reopening must not arm a
+        // second allowance or consume its activity slot while apps are blocked.
+        if block.type == .timer, defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) is Date {
+            UsageMonitoring.reconcileLockout(blockID: block.id)
+            return
+        }
         let active = UsageMonitoring.isUsageMonitorActive(for: block.id)
 
         // Nothing to monitor (not a timer / limit off / empty groups): stop if running.
         guard UsageMonitoring.usageEvent(for: block, groups: groups) != nil else {
             if active { UsageMonitoring.stopUsageMonitor(for: block.id) }
+            if block.type == .timer {
+                defaults.set("No measurable apps selected. Open Lists and select apps, categories or websites in the Screen Time picker. Typed website addresses alone cannot measure usage.", forKey: SharedDefaults.Keys.usageError(blockID: block.id))
+            }
             return
         }
 
@@ -60,6 +72,9 @@ class UsageLimitManager: ObservableObject {
     /// Only releases the shield if a usage lock was actually holding it (and no
     /// scheduled run or manual enable is keeping it up).
     func removeUsageLimit(for block: BlockRule) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         let wasLocked = lockEnd(for: block.id) != nil
         UsageMonitoring.stopUsageMonitor(for: block.id)
         UsageMonitoring.stopLockout(for: block.id) // also clears the persisted end-time
@@ -95,6 +110,9 @@ class UsageLimitManager: ObservableObject {
 
     /// Re-arm a block's budget after an early release / external clear.
     func rearmAfterRelease(blockID: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         UsageMonitoring.stopLockout(for: blockID)
         if let block = BlockStore.shared.block(id: blockID) {
             applyUsageLimit(for: block, forceReset: true)

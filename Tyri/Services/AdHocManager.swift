@@ -7,6 +7,11 @@ final class AdHocManager: ObservableObject {
     static let shared = AdHocManager()
     @Published private(set) var session: AdHocSession?
     private init() { session = AdHocMonitoring.session }
+    var enforcementError: String? {
+        guard let session else { return nil }
+        return SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldError(blockID: session.id))
+            ?? SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: session.id))
+    }
     func refresh(reconcile: Bool = true) {
         if reconcile || (AdHocMonitoring.session.map { $0.endsAt <= Date() } ?? false) { AdHocMonitoring.reconcile() }
         session = AdHocMonitoring.session

@@ -1,0 +1,62 @@
+{
+  "phase": "Recovery warnings fixed \u00b7 2.4 (7) in internal TestFlight",
+  "verdict": "READY \u2014 physical-device acceptance remains open",
+  "notion": "https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384",
+  "rows": [
+    [
+      "FIXED",
+      "SM-07: actionable warnings",
+      "Named block, cause-specific steps, list link, safe retry"
+    ],
+    [
+      "PASS",
+      "Recovery regression tests",
+      "5 retry + 8 presentation; 5/5 iOS 26.5 UI"
+    ],
+    [
+      "PASS",
+      "iOS 27 retry \u2192 Settings",
+      "Sheet conflict fixed; list editing and permission recovery verified"
+    ],
+    [
+      "AVAILABLE",
+      "TestFlight 2.4 (7)",
+      "VALID / IN_BETA_TESTING; Amit Internal verified"
+    ],
+    [
+      "DOCUMENTED",
+      "15 state-machine areas",
+      "Repository file: docs/STATE_MACHINES.md; results/screenshots in Notion"
+    ],
+    [
+      "FIXED",
+      "6 grouped issues",
+      "Concurrency, deletion, recovery, NFC, migration, calendar ownership"
+    ],
+    [
+      "PASS",
+      "New regressions",
+      "13 lifecycle + 8 mutations + 4 NFC + 4 migration"
+    ],
+    [
+      "PASS",
+      "Interprocess concurrency",
+      "320/320 updates, recursive leases, process-exit recovery"
+    ],
+    [
+      "PASS",
+      "Existing logic battery",
+      "895 callbacks; activation, recovery, schedule, shield, calendar"
+    ],
+    [
+      "PASS",
+      "iOS 27 UI",
+      "4/4 affected flows; screenshots inspected"
+    ],
+    [
+      "PENDING",
+      "Physical acceptance",
+      "Affected iPhone unavailable; effective shielding unverified"
+    ]
+  ]
+}

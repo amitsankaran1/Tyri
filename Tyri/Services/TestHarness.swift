@@ -30,6 +30,7 @@ enum TestHarness {
     static func seedDemoStateIfRequested() {
         guard seedDemoState else { return }
 
+        if let session = AdHocMonitoring.session { AdHocMonitoring.finish(id: session.id) }
         DebugSimulator.resetAllRuntime()
         for block in BlockStore.shared.blocks { BlockStore.shared.delete(id: block.id) }
         for group in AppGroupStore.shared.groups { AppGroupStore.shared.delete(id: group.id) }
@@ -77,6 +78,12 @@ enum TestHarness {
                 block.schedule = BlockingSchedule()
                 BlockStore.shared.update(block)
                 BlockStore.shared.flush()
+            }
+            if BlockStatusPresentation.reviewScenario == "adhoc-error" {
+                // Empty-token fixture tests presentation only, not effective shielding.
+                let item = AdHocSession(group: social, startedAt: Date(), endsAt: Date().addingTimeInterval(1800))
+                try? AdHocMonitoring.save(item)
+                AdHocManager.shared.refresh()
             }
             return
         }

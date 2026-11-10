@@ -34,8 +34,9 @@ struct HomeView: View {
     private var active: [BlockRule] { blocks(in: .blocking) }
     private var tracking: [BlockRule] { blocks(in: .tracking) }
     private var onBreak: [BlockRule] { blocks(in: .paused) }
+    private var attention: [BlockRule] { blocks(in: .unavailable) }
     private var configured: [BlockRule] {
-        blockStore.blocks.filter { [.off, .setup, .unavailable].contains(status($0).state) }
+        blockStore.blocks.filter { [.off, .setup].contains(status($0).state) }
     }
     private var tagIsOn: Bool { blockStore.blocks(ofType: .tag).contains { $0.isEnabled } }
 
@@ -64,6 +65,7 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                 }
+                blockSection("Needs attention — tap a block to fix it", blocks: attention)
                 if !authorized || groupStore.groups.isEmpty || blockStore.blocks.isEmpty {
                     Section("Get started") {
                         if !authorized {
@@ -90,22 +92,11 @@ struct HomeView: View {
                         }
                     }
                 }
-                ForEach(blockStore.blocks.filter { scheduling.registrationErrors[$0.id] != nil }) { block in
-                    Section {
-                        ScheduleRegistrationWarning(block: block, message: scheduling.registrationErrors[block.id] ?? "")
-                    }
-                }
                 Section {
                     Button { showAdHoc = true } label: {
                         Label(adHoc.session.map { "\($0.group.name) · Unblocks at \($0.endsAt.formatted(date: .omitted, time: .shortened))" } ?? "Block for a while", systemImage: "timer")
                     }
                     .accessibilityIdentifier("ad-hoc-block")
-                }
-                ForEach(blockStore.blocks.filter { usageError($0.id) != nil }) { block in
-                    Section {
-                        Label(usageError(block.id) ?? "", systemImage: "exclamationmark.triangle")
-                        Button("Retry block") { usage.applyUsageLimit(for: block); usage.reconcileExpiredLocks(); refreshDate = Date() }
-                    } header: { Text(block.name) }
                 }
                 blockSection("Blocking now", blocks: active)
                 blockSection("Tracking usage", blocks: tracking)
@@ -182,6 +173,12 @@ struct HomeView: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(presentation.color)
                                 Text(presentation.detail).font(.caption).foregroundStyle(.secondary)
+                                if presentation.state == .unavailable {
+                                    Text("View recovery steps").font(.caption.weight(.semibold)).foregroundStyle(.blue)
+                                }
+                                if let start = presentation.lockStart, let end = presentation.lockEnd {
+                                    LockElapsedView(start: start, end: end)
+                                }
                                 if presentation.state == .tracking, let limit = presentation.limitMinutes {
                                     UsageProgressView(used: presentation.usedMinutes, limit: limit)
                                         .padding(.top, 4)
@@ -193,6 +190,7 @@ struct HomeView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                    .accessibilityIdentifier("open-block-\(block.name)")
                 }
             }
         }
@@ -203,6 +201,9 @@ struct HomeView: View {
             return .init(state: .setup, detail: "Allow Screen Time access to start blocking distractions.")
         }
         if let session = adHoc.session {
+            if let error = adHoc.enforcementError {
+                return .init(state: .unavailable, detail: "\(session.group.name): \(error) Open Block for a while below for details.")
+            }
             return .init(state: .blocking, detail: "\(session.group.name) · Unblocks at \(session.endsAt.formatted(date: .omitted, time: .shortened)). Other active blocks still apply.")
         }
         if let first = active.first {
@@ -216,8 +217,8 @@ struct HomeView: View {
         if !tracking.isEmpty {
             return .init(state: .tracking, detail: "Your usage limit\(tracking.count == 1 ? " is" : "s are") running. Apps stay available until you reach a limit.")
         }
-        if configured.contains(where: { status($0).state == .unavailable }) {
-            return .init(state: .unavailable, detail: "A usage limit isn't running. Open its block to check the setup.")
+        if let first = attention.first {
+            return .init(state: .unavailable, detail: "\(first.name): \(status(first).detail) Tap it below for recovery steps.")
         }
         return .init(state: .off, detail: "No blocks are on right now. Your scheduled and tag blocks are ready when you need them.")
     }
@@ -228,15 +229,15 @@ struct HomeView: View {
         case .tag: return tagIsOn && block.isEnabled ? "On until you scan your tag" : "Start with your NFC tag"
         }
     }
-    private func usageError(_ id: UUID) -> String? {
-        SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: id))
-            ?? SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: id))
-    }
     private func refresh() {
+        breaks.restoreActiveBreaksIfAny()
         adHoc.refresh()
         screenTime.checkAuthorizationStatus()
         screenTime.restoreBlockingIfNeeded()
-        scheduling.refresh()
         usage.reconcileExpiredLocks()
+        if screenTime.authorizationStatus == .approved {
+            scheduling.repairMissingSchedules()
+            usage.reapplyAllUsageLimits()
+        }
     }
 }

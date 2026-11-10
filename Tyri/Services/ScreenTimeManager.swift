@@ -66,6 +66,9 @@ class ScreenTimeManager: ObservableObject {
     /// Resolves against the in-memory `AppGroupStore` (which can be ahead of the
     /// persisted copy the extension reads), then defers to BlockingActuator.
     func applyBlockShield(_ block: BlockRule) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard authorizationStatus == .approved else {
             #if DEBUG
             DebugLog.shared.log(.screenTime, "applyBlockShield(\(block.name)) skipped — auth not approved")
@@ -93,6 +96,9 @@ class ScreenTimeManager: ObservableObject {
     /// Releasing the block also ends any break on it — without re-shielding — so no
     /// orphaned break window can re-lock a block the user already turned off.
     func clearBlockShield(id: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         BreakManager.shared.cancelIfActive(blockID: id)
         BlockingActuator.clearShields(blockID: id)
         #if DEBUG
@@ -103,17 +109,23 @@ class ScreenTimeManager: ObservableObject {
     /// Emergency override: clear every block's shield and turn off manual/tag
     /// state. Scheduled/timer blocks may re-apply at their next interval.
     func disableAllBlocks() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         if let session = AdHocMonitoring.session { AdHocMonitoring.finish(id: session.id) }
         AdHocManager.shared.refresh()
-        for block in BlockStore.shared.blocks {
+        let blocks = BlockStore.shared.blocks
+        for block in blocks {
             ScheduleEnforcement.releaseCurrentWindow(block: block)
+            if block.isEnabled { BlockStore.shared.setEnabled(id: block.id, enabled: false) }
+        }
+        BlockStore.shared.flush()
+        for block in blocks {
             clearBlockShield(id: block.id)
             UsageMonitoring.stopLockout(for: block.id)
             SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: block.id))
-            if block.isEnabled {
-                BlockStore.shared.setEnabled(id: block.id, enabled: false)
-            }
         }
+        UsageLimitManager.shared.reapplyAllUsageLimits()
         CooldownManager.shared.cancel()
         SchedulingManager.shared.refresh()
         UsageLimitManager.shared.refresh()
@@ -128,7 +140,8 @@ class ScreenTimeManager: ObservableObject {
     /// this reads.
     func isBlockActive(_ block: BlockRule) -> Bool {
         let suite = SharedDefaults.suite
-        let scheduledActive = suite.bool(forKey: SharedDefaults.Keys.running(blockID: block.id))
+        let released = (suite.object(forKey: SharedDefaults.Keys.scheduleReleasedUntil(blockID: block.id)) as? Date).map { $0 > Date() } ?? false
+        let scheduledActive = block.type == .schedule && block.schedule?.activeWindow() != nil && !released
         let usageLocked = (suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date).map { $0 > Date() } ?? false
         return block.isEnabled || scheduledActive || usageLocked
     }
