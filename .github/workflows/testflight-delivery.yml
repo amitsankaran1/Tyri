@@ -40,7 +40,7 @@ jobs:
         github.event.issue.number == 25 && github.event.issue.pull_request &&
         startsWith(github.event.comment.body, '/tyri-build ')))
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 110
     environment: tyri-internal-delivery
     concurrency:
       group: tyri-internal-delivery

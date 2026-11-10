@@ -84,6 +84,21 @@ class Tests(unittest.TestCase):
             bridge.start_or_resume(apple, github, {"request_id": "comment-9", "source_sha": SOURCE, "fresh": True})
         self.assertEqual(apple.calls, [])
 
+    def test_fresh_trigger_uses_exact_immutable_ref_once(self):
+        receipt_path = f"/repos/{bridge.REPO}/issues/25/comments"
+        github = Fake({("GET", receipt_path + "?per_page=100&page=1"): [],
+                       ("GET", f"/repos/{bridge.REPO}/git/ref/heads/main"): {"object": {"sha": SOURCE}},
+                       ("POST", receipt_path): {"id": 123},
+                       ("PATCH", f"/repos/{bridge.REPO}/issues/comments/123"): {"id": 123}})
+        apple = Fake({("GET", f"/v1/ciWorkflows/{bridge.WORKFLOW}"): {"data": {"attributes": {"isEnabled": True}}},
+                      ("POST", "/v1/ciBuildRuns"): {"data": {"id": "new-run"}}})
+        with patch.object(bridge, "immutable_source", return_value="protected-exact-ref"):
+            _, receipt = bridge.start_or_resume(apple, github, {"request_id": "comment-9", "source_sha": SOURCE, "fresh": True})
+        posts = [data for method, path, data in apple.calls if method == "POST"]
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]["data"]["relationships"]["sourceBranchOrTag"]["data"]["id"], "protected-exact-ref")
+        self.assertEqual(receipt["ci_run_id"], "new-run")
+
     def test_millisecond_time_reconciliation(self):
         apple = Fake({("GET", f"/v1/ciWorkflows/{bridge.WORKFLOW}/buildRuns?sort=-number&limit=200"): {"data": [{
             "id": "accepted", "attributes": {"sourceCommit": {"commitSha": SOURCE}, "createdDate": "2026-11-10T12:00:00.123Z"}}]}})

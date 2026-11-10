@@ -188,7 +188,7 @@ def immutable_source(apple, github, sha):
             ref = github.call("GET", path)
     if ref.get("object", {}).get("type") != "commit" or ref["object"]["sha"] != sha:
         raise RuntimeError("Candidate tag does not identify the approved source")
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + 600
     while True:
         refs = list(apple_pages(apple, f"/v1/scmRepositories/{SCM_REPOSITORY}/gitReferences?limit=200"))
         found = [r for r in refs if r["attributes"].get("canonicalName") == "refs/tags/" + tag
