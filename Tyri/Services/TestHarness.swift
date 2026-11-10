@@ -79,7 +79,8 @@ enum TestHarness {
                 BlockStore.shared.update(block)
                 BlockStore.shared.flush()
             }
-            if BlockStatusPresentation.reviewScenario == "adhoc-error" {
+            if let scenario = BlockStatusPresentation.reviewScenario,
+               ["adhoc-error", "adhoc-release-wait"].contains(scenario) {
                 // Empty-token fixture tests presentation only, not effective shielding.
                 let item = AdHocSession(group: social, startedAt: Date(), endsAt: Date().addingTimeInterval(1800))
                 try? AdHocMonitoring.save(item)
@@ -96,6 +97,17 @@ enum TestHarness {
         UsageLimitManager.shared.refresh()
 
         print("🌱 Seeded demo state: 2 groups, 3 blocks (1 scheduled + 1 usage-locked), tag registered")
+    }
+
+    /// Short presentation-only deadline begins when the sheet opens, after launch.
+    static func prepareAdHocReleaseWaitForUIReview() {
+        #if targetEnvironment(simulator)
+        guard seedDemoState, BlockStatusPresentation.reviewScenario == "adhoc-release-wait",
+              var item = AdHocMonitoring.session else { return }
+        item.releaseAt = Date().addingTimeInterval(10)
+        try? AdHocMonitoring.save(item)
+        AdHocManager.shared.refresh(reconcile: false)
+        #endif
     }
 
     /// Exercise actual shared-state recovery, independent of extension delivery.

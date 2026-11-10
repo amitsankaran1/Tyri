@@ -20,7 +20,10 @@ CONTROL_PR = 25
 APP = "6757515805"
 WORKFLOW = "37dfe861-29f0-4013-bc1c-5dc29544d23d"
 GROUP = "ef128175-ca20-4e29-8e04-b0d222463e8d"
-MAIN_REF = "c262f4c7-85ec-4786-9c77-9672cac0aa78"
+SCM_REPOSITORY = "3111bb30-22b7-4250-9b13-9160d3dd6233"
+TAG_RULESET = 26963379
+TAG_PREFIX = "automation/tyri-candidate-"
+TESTER = "7d40b21d-3e17-4f16-a92e-45a9698f4e82"
 SHA = re.compile(r"[0-9a-f]{40}")
 COMMAND = re.compile(r"/tyri-build ([0-9a-f]{32}) ([0-9a-f]{40})")
 
@@ -92,6 +95,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+class APIError(RuntimeError):
+    def __init__(self, method, status):
+        super().__init__(f"API {method} failed: HTTP {status}")
+        self.status = status
+
+
 class API:
     def __init__(self, origin, token):
         self.origin, self.token = origin, token
@@ -110,7 +119,7 @@ class API:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             # Do not print response bodies or authorization material.
-            raise RuntimeError(f"API {method} failed: HTTP {error.code}") from None
+            raise APIError(method, error.code) from None
 
 
 def find_receipt(github, request_id):
@@ -144,6 +153,53 @@ def timestamp(value):
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def apple_pages(apple, path):
+    for _ in range(100):
+        page = apple.call("GET", path)
+        yield from page["data"]
+        next_url = page.get("links", {}).get("next")
+        if not next_url:
+            return
+        parsed = urlsplit(next_url)
+        if parsed.scheme != "https" or parsed.netloc != "api.appstoreconnect.apple.com":
+            raise RuntimeError("Unexpected pagination origin")
+        path = parsed.path + ("?" + parsed.query if parsed.query else "")
+    raise RuntimeError("Apple pagination exceeded its bound")
+
+
+def immutable_source(apple, github, sha):
+    rule = github.call("GET", f"/repos/{REPO}/rulesets/{TAG_RULESET}")
+    expected = ["refs/tags/" + TAG_PREFIX + "*"]
+    if (rule.get("target") != "tag" or rule.get("enforcement") != "active"
+            or rule.get("bypass_actors") != [] or rule.get("conditions", {}).get("ref_name") != {"include": expected, "exclude": []}
+            or not {"update", "deletion"}.issubset({r["type"] for r in rule.get("rules", [])})):
+        raise RuntimeError("Candidate-tag immutability protection is not established")
+    tag = TAG_PREFIX + sha
+    path = f"/repos/{REPO}/git/ref/tags/{tag}"
+    try:
+        ref = github.call("GET", path)
+    except APIError as error:
+        if error.status != 404:
+            raise
+        try:
+            ref = github.call("POST", f"/repos/{REPO}/git/refs", {"ref": "refs/tags/" + tag, "sha": sha})
+        except (APIError, urllib.error.URLError):
+            # A lost create response is reconciled by the unique protected ref.
+            ref = github.call("GET", path)
+    if ref.get("object", {}).get("type") != "commit" or ref["object"]["sha"] != sha:
+        raise RuntimeError("Candidate tag does not identify the approved source")
+    deadline = time.monotonic() + 180
+    while True:
+        refs = list(apple_pages(apple, f"/v1/scmRepositories/{SCM_REPOSITORY}/gitReferences?limit=200"))
+        found = [r for r in refs if r["attributes"].get("canonicalName") == "refs/tags/" + tag
+                 and r["attributes"].get("kind") == "TAG"]
+        if len(found) == 1:
+            return found[0]["id"]
+        if len(found) > 1 or time.monotonic() >= deadline:
+            raise RuntimeError("Apple has not indexed a unique candidate tag; retry this request safely")
+        time.sleep(10)
+
+
 def matching_runs(apple, sha, after=None):
     data = apple.call("GET", f"/v1/ciWorkflows/{WORKFLOW}/buildRuns?sort=-number&limit=200")["data"]
     return [run for run in data if (run["attributes"].get("sourceCommit") or {}).get("commitSha") == sha
@@ -171,15 +227,14 @@ def start_or_resume(apple, github, request):
             workflow = apple.call("GET", f"/v1/ciWorkflows/{WORKFLOW}")["data"]["attributes"]
             if not workflow.get("isEnabled"):
                 raise RuntimeError("The approved delivery workflow is not activated")
-            ref = apple.call("GET", f"/v1/scmGitReferences/{MAIN_REF}")["data"]["attributes"]
-            if ref.get("canonicalName") != "refs/heads/main" or ref.get("kind") != "BRANCH":
-                raise RuntimeError("The configured Apple reference is not main")
+            source_ref = immutable_source(apple, github, request["source_sha"])
+            receipt["source_tag"] = TAG_PREFIX + request["source_sha"]
             receipt["attempted_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
             comment_id = save_receipt(github, request, receipt, None)
             result = apple.call("POST", "/v1/ciBuildRuns", {"data": {"type": "ciBuildRuns",
                 "attributes": {"clean": True}, "relationships": {
                     "workflow": {"data": {"type": "ciWorkflows", "id": WORKFLOW}},
-                    "sourceBranchOrTag": {"data": {"type": "scmGitReferences", "id": MAIN_REF}}}}})
+                    "sourceBranchOrTag": {"data": {"type": "scmGitReferences", "id": source_ref}}}}})
             receipt["ci_run_id"] = result["data"]["id"]
         else:
             # The main merge triggers Xcode Cloud. This job only observes it.
@@ -220,24 +275,21 @@ def verify_once(apple, receipt):
         raise RuntimeError("Build expired or processing failed")
     if attrs.get("processingState") != "VALID":
         return False
-    path, available = f"/v1/betaGroups/{GROUP}/builds?limit=200", False
-    for _ in range(100):
-        page = apple.call("GET", path)
-        if any(item["id"] == build["id"] for item in page["data"]):
-            available = True
-            break
-        next_url = page.get("links", {}).get("next")
-        if not next_url:
-            break
-        parsed = urlsplit(next_url)
-        if parsed.scheme != "https" or parsed.netloc != "api.appstoreconnect.apple.com":
-            raise RuntimeError("Unexpected pagination origin")
-        path = parsed.path + ("?" + parsed.query if parsed.query else "")
+    beta = apple.call("GET", f"/v1/builds/{build['id']}/buildBetaDetail")["data"]["attributes"]
+    receipt["internal_beta_state"] = beta["internalBuildState"]
+    if beta["internalBuildState"] != "IN_BETA_TESTING":
+        return False
+    available = any(item["id"] == build["id"] for item in apple_pages(apple, f"/v1/betaGroups/{GROUP}/builds?limit=200"))
     if not available:
         return False
+    testers = apple_pages(apple, f"/v1/betaGroups/{GROUP}/betaTesters?limit=200")
+    eligible = any(t["id"] == TESTER and t["attributes"].get("state") in {"ACCEPTED", "INSTALLED"} for t in testers)
+    if not eligible:
+        raise RuntimeError("The intended existing internal tester is not eligible")
     version = apple.call("GET", f"/v1/builds/{build['id']}/preReleaseVersion")["data"]["attributes"]["version"]
     receipt.update(build_id=build["id"], version=version, build_number=attrs["version"],
-                   processing="VALID", available_group="Amit Internal", verified_at=dt.datetime.now(dt.timezone.utc).isoformat())
+                   processing="VALID", available_group="Amit Internal", tester_access_verified=True,
+                   verified_at=dt.datetime.now(dt.timezone.utc).isoformat())
     return True
 
 

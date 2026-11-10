@@ -2,7 +2,7 @@
 
 Implementation task: https://app.notion.com/p/3cb16e0e0e3a81438ddbd3a49c70e1ed
 
-Approved policy: use Xcode Cloud, with app-changing merges to `main` automatically producing an internal TestFlight candidate after successful checks. PR checks are provisioned and main requires all three Xcode Cloud checks. Live activation and revision-specific verification evidence belong in the implementation task linked above; checked-in payloads alone do not prove a service is enabled or a build available. The internal workflow starts disabled until verification and workflow-PR approval. The hourly bug routine remains documentation-only until the iOS execution path is verified and pickup policy is explicitly expanded.
+Approved policy: use Xcode Cloud, with app-changing merges to `main` automatically producing an internal TestFlight candidate after successful checks. PR checks are provisioned and main requires all three Xcode Cloud checks. Live activation and revision-specific verification evidence belong in the implementation task linked above; checked-in payloads alone do not prove a service is enabled or a build available. The internal workflow starts disabled until verification and workflow-PR approval. The shared routine now assesses all supported request types under the current Guide/Skills; project execution and delivery capability must actually be verified.
 
 ## Source prerequisite
 
@@ -29,13 +29,13 @@ Archive for **TestFlight and App Store** eligibility while distributing automati
 
 ## Agent and review loop
 
-1. A filed task retains its report, scope and observable acceptance criteria. Once app-code pickup is explicitly enabled, the dispatcher checks out current canonical source, reproduces the bug, implements in an isolated branch, runs relevant checks and opens/updates one PR.
+1. A filed task retains its report, scope and observable acceptance criteria. The designated routine follows the current project authority and verified execution path, reproduces the bug, implements in an isolated branch, runs relevant checks and opens/updates one PR.
 2. Cloud PR checks apply to the current PR revision/merge candidate. The agent reads actual failed logs, fixes failures within scope and updates the same PR. It does not weaken tests or change signing/release policy to make a check green. Retry infrastructure failures on the existing run when supported; repeated failures or scope changes get a concrete Human review checkpoint, not an unbounded retry loop.
 3. Amit reviews the diff, test evidence and labeled screenshots. Required checks must pass for the latest revision; old approval or old green checks do not cover new commits. Amit approves and merges under the current policy.
 4. The candidate workflow checks the merged source again before archiving. PR success alone does not verify the exact merged source. A failed test/archive/signing step prevents delivery.
 5. Record the source, CI run and version/build before treating a binary as a candidate. Mark delivery complete only after Apple's processing and group availability are verified.
 
-Use GitHub and the CI provider's native run/cancellation identities. Notion statuses remain descriptive; do not add statuses for each build phase or trigger deployment from a status change. A newer main commit must not silently cancel an upload whose outcome is unknown: reconcile the existing Apple build first. Multiple requested fixes can share a candidate, but each task must name the candidate that actually contains its fix.
+Use GitHub and the CI provider's native run/cancellation identities. A Notion Inbox/Deliver handoff queues or resumes the task's authorized outcome; status alone is not merge/deployment permission or a new build request. [Remote request and receipt instructions](testflight-agent-command.md) describe the protected adapter. A newer main commit must not silently cancel an upload whose outcome is unknown: reconcile the existing Apple build first. Multiple requested fixes can share a candidate, but each task must name the candidate that actually contains its fix.
 
 ## Signing and numbering
 

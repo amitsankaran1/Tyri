@@ -24,7 +24,13 @@ Apple's team key is account-wide; repository/environment restrictions do not
 change that Apple scope. Do not put it in Git, Notion, prompts, logs or PR jobs.
 
 The job runs only trusted main code. Its manual/comment request author is fixed
-to amitsankaran1. It accepts neither arbitrary source branches nor script text.
+to amitsankaran1. A fresh request must name current approved main; the job creates
+or reuses a lightweight automation/tyri-candidate-<SHA> tag at that exact commit.
+Ruleset 26963379 forbids updates/deletions of these tags with no bypass actors;
+the job checks that protection before using the tag. Apple builds the immutable
+tag, so later changes to main cannot change the requested source. The ephemeral
+GitHub job token has contents-write permission to create these tags; existing
+main protection still requires approved PR integration. It accepts neither arbitrary source branches nor script text.
 The reviewer role remains separate and unassigned; this adapter does not approve
 or merge application changes.
 
@@ -50,8 +56,11 @@ or merge application changes.
    updated after successful processing/group availability. Inspect GitHub job
    failures when it is incomplete. Rerun the same failed job to resume a recorded
    run; never make a new request just because processing is slow.
-5. Copy the verified source SHA, Apple run, version/build, processing and Amit
-   Internal availability evidence into the task. A green archive or submitted
+5. Copy the verified source SHA, Apple run, version/build, processing, internal
+   beta state and Amit Internal availability evidence into the task. The adapter
+   requires IN_BETA_TESTING plus group membership and the existing intended
+   tester's accepted/installed access; it never logs tester names or emails.
+   A green archive or submitted
    upload alone is not delivery. Required device acceptance goes to Human review;
    Done follows the task's agreed outcome.
 
@@ -73,6 +82,9 @@ for setup; the connected agents can use the comment route without a local CLI.
 
 Tests/TestFlightBridgeQA/run.py checks caller/source restrictions, existing-run
 reuse, uncertain-write behavior, source/app/group evidence and JWT signatures.
+The authorized delivery job queues up to 100 pending requests instead of
+replacing a pending request when a new one arrives; the routine must reconcile
+any canceled/overflowed job. Unrelated comments cannot enter its job queue.
 These tests do not establish live job activation. Verify a real main merge and a
 separate explicit fresh request after activation, then record their receipts in
 the CI task before declaring the remote loop ready.

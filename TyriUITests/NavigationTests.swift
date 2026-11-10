@@ -57,6 +57,22 @@ final class NavigationTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Untitled"].exists)
     }
 
+    func testTemporaryReleaseAppearsWhenWaitEnds() throws {
+        app.terminate()
+        app.launchEnvironment["TYRI_UI_REVIEW"] = "adhoc-release-wait"
+        app.launch()
+        app.buttons["ad-hoc-block"].tap()
+        XCTAssertTrue(app.navigationBars["Block for a while"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Stop early in"].waitForExistence(timeout: 5))
+        capture("temporary-release-wait-fixture")
+        let release = app.buttons["Release block"]
+        XCTAssertTrue(release.waitForExistence(timeout: 20))
+        XCTAssertTrue(release.isEnabled)
+        capture("temporary-release-ready-fixture")
+        release.tap()
+        XCTAssertTrue(app.navigationBars["Focus"].waitForExistence(timeout: 5))
+    }
+
     func testUsageUXReviewStates() throws {
         for (scenario, title) in [("tracking", "Tracking usage"), ("blocking", "Blocking on"), ("break", "On a break"), ("mixed", "Blocking on"), ("off", "Blocking off")] {
             app.terminate()

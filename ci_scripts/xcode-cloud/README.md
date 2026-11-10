@@ -49,4 +49,12 @@ asc --profile 'Tyri automation' xcode-cloud artifacts list --run-id RUN_ID
 
 Inspect the existing run before retrying. A successful PR build does not authorize a merge or establish physical enforcement. After an approved main merge, the candidate must pass checks, archive/sign, process successfully in Apple and become available to the existing internal group. Record source SHA, run ID, version/build and group availability in the task. An uncertain upload must be reconciled before a replacement attempt.
 
+The remote request/receipt adapter is documented in docs/testflight-agent-command.md.
+Apply internal-candidate.immutable-source.patch.json as a complete start-condition
+set: automatic app-changing main, manual main, and manual protected candidate tags.
+Apple's public update replaces the start-condition set, so a manual-only patch
+can remove the automatic trigger. Verify the complete private editor readback,
+including disabled/active state and the unchanged internal post-action, after
+updates. CLI response models omit false values such as isEnabled=false.
+
 Cloud numbering was advanced from 1 to 10 after checking both uploaded builds and in-flight upload records. PR checks also consume numbers; gaps are expected. Inspect the current counter and uploads for any exceptional local release instead of hardcoding the next number.

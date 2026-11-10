@@ -27,12 +27,8 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write # Create only protected immutable candidate tags from approved main.
   issues: write
-
-concurrency:
-  group: tyri-internal-delivery
-  cancel-in-progress: false
 
 jobs:
   verify-internal:
@@ -46,6 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: tyri-internal-delivery
+    concurrency:
+      group: tyri-internal-delivery
+      queue: max
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

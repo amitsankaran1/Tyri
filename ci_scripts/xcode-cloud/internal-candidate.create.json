@@ -96,6 +96,16 @@
             }
           ]
         }
+      },
+      "manualTagStartCondition": {
+        "source": {
+          "patterns": [
+            {
+              "pattern": "automation/tyri-candidate-",
+              "isPrefix": true
+            }
+          ]
+        }
       }
     },
     "relationships": {
