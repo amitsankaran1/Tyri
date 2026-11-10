@@ -266,10 +266,19 @@ final class NavigationTests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Take a break,")).firstMatch.tap()
         app.buttons["5 min"].tap()
         capture("10-access-settings")
-        app.swipeDown()
-        app.swipeDown()
-        app.textFields["Block name"].tap()
-        app.textFields["Block name"].typeText("Evening focus")
+        let blockName = app.textFields["Block name"]
+        // Whole-app downward swipes can dismiss this unsaved sheet. Scroll
+        // within its content, stopping as soon as the field is reachable.
+        for _ in 0..<8 where !blockName.isHittable {
+            XCTAssertTrue(app.navigationBars["New block"].exists)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                .press(forDuration: 0.05, thenDragTo:
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)))
+        }
+        XCTAssertTrue(blockName.isHittable)
+        capture("10-block-name-reached")
+        blockName.tap()
+        blockName.typeText("Evening focus")
         XCTAssertTrue(app.buttons["Save"].isEnabled)
         app.buttons["Save"].tap()
         // Saving persists the rule, but failed simulator registration keeps
