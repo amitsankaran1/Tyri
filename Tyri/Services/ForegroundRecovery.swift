@@ -72,6 +72,9 @@ final class ForegroundRecovery: ObservableObject {
         AppGroupStore.shared.flush()
         running = true
         isChecking = true
+        // Restore the existing break timer before the first native observation:
+        // a persisted break still needs its deadline tick if that read stalls.
+        BreakManager.shared.publishPersistedState()
         Task {
             var attempted: Set<String> = []
             var errors: [UUID: String] = [:]

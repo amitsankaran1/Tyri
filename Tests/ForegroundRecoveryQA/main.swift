@@ -65,7 +65,8 @@ extension BlockingSchedule {
 @MainActor final class BreakManager {
     static let shared = BreakManager()
     var lastError: String?
-    func publishPersistedState() {}
+    var publications = 0
+    func publishPersistedState() { publications += 1 }
 }
 
 @main struct Tests {
@@ -97,6 +98,7 @@ extension BlockingSchedule {
                 unlock.signal()
             } else { recovery.request() }
             try await wait { Probe.didEnter }
+            precondition(BreakManager.shared.publications > 0, "Persisted break timer was not restored before native IPC")
             // Both the UI heartbeat and a callback's lease acquisition remain
             // available while native IPC is stalled in the recovery worker.
             for _ in 0..<5 { try await Task.sleep(nanoseconds: 10_000_000) }
