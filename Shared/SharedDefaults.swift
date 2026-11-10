@@ -59,6 +59,7 @@ enum SharedDefaults {
         static func breakUsed(blockID: UUID) -> String { "breakUsed.\(blockID.uuidString)" }
         /// Human-readable readback summary of the last shield apply — written by
         /// BlockingActuator so silent shield drops are visible in the debug menu.
+        static func shieldError(blockID: UUID) -> String { "shieldError.\(blockID.uuidString)" }
         static func shieldAudit(blockID: UUID) -> String { "shieldAudit.\(blockID.uuidString)" }
     }
 }

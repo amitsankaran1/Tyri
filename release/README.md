@@ -80,3 +80,17 @@ Approved in chat November 1, 2026. Release app and monitor archive compiled from
 ## Repeat usage cycles and ad hoc sessions — 2.3 (9)
 
 **Uploaded successfully on November 3, 2026 at 05:22:25 UTC.** Fresh usage-monitor identities, stale-threshold protection, registration error/retry feedback, missing expiry repair, and temporary Block for a while sessions. Source: `42170df`. Both Apple Distribution signatures, Store profiles, versions and required entitlements were verified. Apple reports processing. Tester availability and physical enforcement remain acceptance checks; browser access was unavailable. [Release receipt](builds/2.3-9.json) · [Review, screenshots and test evidence](../docs/reviews/2026-11-03-usage-cycle-and-ad-hoc.md). No App Store release was performed.
+
+## Timer durations — 2.4 (3)
+
+Uploaded successfully November 4, 2026 at 21:45:34 UTC from `7334f2b`. This build contains only the duration picker and timer-progress changes: 00:05–23:55 in five-minute steps, reported usage milestones, and elapsed blocked time. AI block creation, list onboarding, App Attest and the model endpoint are excluded. Deferred work is preserved separately on `develop/2.4` at `51cca9b`.
+
+Both focused UI tests passed on the isolated release checkout; all 287 duration milestone ranges and progress-state checks passed. The physical-device Release archive and distribution export succeeded. Both final signatures, profiles, versions and required capabilities were verified. Apple accepted the upload without errors or warnings. Processing is complete: VALID and IN_BETA_TESTING for Amit Internal. Export compliance is completed and testing notes are saved. External beta review has not been submitted. Physical Screen Time enforcement remains a tester acceptance check. See [receipt](builds/2.4-3.json) and [testing notes](WhatToTest.txt).
+
+Amit confirmed on November 4 that 2.4 (3) works on his device. The timer request is accepted; individual boundary scenarios were not separately enumerated.
+
+## Blocking reliability and usability — 2.4 (4)
+
+Apple accepted the upload November 6, 2026 at 05:24:20 UTC without errors. Source: `e9bcf4b`. Repairs lost foreground registrations, frees usage activity capacity before lockout, applies manual shields before registration, surfaces missing permission and shield-setting failures, and adds release-accessible diagnostics. Active controls precede configuration; manual duration is explicit; an in-form Save action fixes the missing toolbar action on Duo.
+
+Modern simulator scenarios pass across iOS 26.2, 26.5, 27.0 and corrected 27.1 runs. All production-logic checks pass. iOS 17.5 testing remains unverified after candidate and clean-baseline XCTest timeouts. Actual iPhone enforcement is still an acceptance check. AI remains excluded. See [QA report](../docs/qa/blocking-2026-11-05/README.md), [release receipt](builds/2.4-4.json), and [Notion evidence](https://app.notion.com/p/41016e0e0e3a818e843ec19a9777c384). Processing is complete: VALID and IN_BETA_TESTING. Membership in Amit Internal was verified through its automatic all-build distribution. Testing notes and export compliance are saved. External review was not submitted.

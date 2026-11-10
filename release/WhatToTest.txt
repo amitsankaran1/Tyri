@@ -1,10 +1,7 @@
-Tyri 2.3 (9): Repeat usage lockouts and quick temporary blocks.
+2.4 (7) — Actionable blocking warnings
 
-- Complete two usage cycles: reach your allowance, stay blocked for the full lockout, then reach the allowance again. Repeat with Tyri closed and after reopening it.
-- Focus shows registration failures with Retry block. Reopening retries failed usage registrations without replacing a healthy running allowance.
-- In Focus, tap Block for a while, choose a list and duration, then start. The session ends automatically and creates no saved rule. Custom times run from 15 minutes to 24 hours in 15-minute steps.
-- Close Tyri during a temporary session and confirm expiry still works. Changing the source list does not change the session already running.
-- Stop early starts a five-minute wait. Reopening or finishing the wait does not release automatically; tap Release block when the wait completes.
-- Other active blocks still apply after a temporary session ends. Emergency Access clears temporary sessions too.
-- Existing lists, schedules, NFC settings and blocking restrictions should survive the upgrade.
-- Live numeric usage totals remain unavailable. Please report block settings, exact times, build number and whether Tyri was open if blocking ends early or fails to repeat.
+Blocks that need attention now appear in a dedicated section near the top of Focus. Open the named block for a What to do section with cause-specific instructions, direct links to its app lists, Retry blocking, Screen Time settings and diagnostics. Schedule, automatic-end and usage-tracking errors are included. Retrying preserves healthy usage allowances.
+
+Please check the block that previously showed Needs attention without instructions. Follow its recovery steps and confirm whether blocking or tracking resumes. If the warning persists, open Blocking diagnostics from the same screen and share the report with the iOS version and affected block/app names.
+
+This build retains the state-machine reliability fixes from 2.4 (6). Real-device Screen Time enforcement still requires acceptance testing. AI/NL features remain deferred.

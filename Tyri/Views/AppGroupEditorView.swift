@@ -210,6 +210,9 @@ struct AppGroupEditorView: View {
     }
 
     private func save() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard hasLoaded, var group = groupStore.group(id: groupID) ?? newGroup else { finish(); return }
 
         guard commitPendingDomain() else { return }
@@ -252,18 +255,29 @@ struct AppGroupEditorView: View {
     }
 
     private func deleteGroup() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         // Backstop for the UI gate: detaching this list from an active block would
         // weaken it.
         guard activeReferencingBlocks.isEmpty else {
             showActiveDeleteAlert = true
             return
         }
-        // Detach from blocks first.
-        for var block in blockStore.blocks where block.appGroupIDs.contains(groupID) {
+        // Persist detachment before replacing monitors; callbacks must resolve
+        // the same selections as the new registrations.
+        let affected = blockStore.blocks.filter { $0.appGroupIDs.contains(groupID) }
+        for var block in affected {
             block.appGroupIDs.removeAll { $0 == groupID }
             blockStore.update(block)
         }
         groupStore.delete(id: groupID)
+        blockStore.flush()
+        groupStore.flush()
+        for previous in affected {
+            guard let block = blockStore.block(id: previous.id) else { continue }
+            if block.type == .timer { usageLimitManager.applyUsageLimit(for: block, forceReset: true) }
+        }
         finish()
     }
 }

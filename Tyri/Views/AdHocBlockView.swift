@@ -15,11 +15,20 @@ struct AdHocBlockView: View {
         Form {
             if let session = manager.session {
                 Section {
-                    Label(BlockStatusPresentation.canDisplayActivity ? "Blocking on" : "Screen Time access needed", systemImage: "lock.fill")
+                    Label(BlockStatusPresentation.canDisplayActivity ? (manager.enforcementError == nil ? "Blocking on" : "Blocking needs attention") : "Screen Time access needed", systemImage: manager.enforcementError == nil ? "lock.fill" : "exclamationmark.circle")
                         .foregroundStyle(BlockStatusPresentation.canDisplayActivity ? Color.red : Color.secondary)
                     Text(session.group.name).font(.headline)
-                    Text("Unblocks at \(session.endsAt.formatted(date: .omitted, time: .shortened))")
+                    Text("Session ends at \(session.endsAt.formatted(date: .omitted, time: .shortened))")
                     Text(session.endsAt, style: .timer).monospacedDigit()
+                }
+                if let issue = manager.enforcementError {
+                    Section {
+                        Label(issue, systemImage: "exclamationmark.circle")
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("temporary-session-error")
+                    } footer: {
+                        Text("This session keeps its original app selection. To use an updated list, end this session and start another.")
+                    }
                 }
                 Section {
                     if let releaseAt = session.releaseAt {
@@ -34,7 +43,7 @@ struct AdHocBlockView: View {
                         }
                     }
                 } footer: {
-                    Text("Apps stay blocked during the five-minute wait. Other active blocks still apply after release.")
+                    Text(manager.enforcementError == nil ? "Apps stay blocked during the five-minute wait. Other active blocks still apply after release." : "The session stays active during the five-minute wait. Other active blocks may still apply.")
                 }
             } else {
                 Section("App list") {

@@ -56,6 +56,9 @@ class BreakManager: ObservableObject {
     /// Start the block's single per-activation break. No-op if breaks are off,
     /// already used this activation, or another break is running.
     func start(for block: BlockRule) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         guard isBreakAvailable(for: block) else { return }
         guard BreakMonitoring.startBreak(blockID: block.id, minutes: block.breakMinutes) else {
             lastError = "The automatic re-lock could not be scheduled. Your block is still on. Please try again."
@@ -93,9 +96,16 @@ class BreakManager: ObservableObject {
     /// the app was closed and the extension's one-shot window didn't fire.
     func restoreActiveBreaksIfAny() {
         let now = Date()
+        activeBreak = nil
+        stopTickTimer()
         for block in BlockStore.shared.blocks {
             guard let endsAt = BreakMonitoring.breakEnd(blockID: block.id) else { continue }
             if endsAt > now {
+                BreakMonitoring.finishIfExpired(blockID: block.id, now: now)
+                guard BreakMonitoring.breakEnd(blockID: block.id) != nil else {
+                    lastError = "Your break ended because its automatic re-lock could not be restored. Blocking is back on."
+                    continue
+                }
                 activeBreak = ActiveBreak(blockID: block.id, endsAt: endsAt)
                 startTickTimer()
                 return

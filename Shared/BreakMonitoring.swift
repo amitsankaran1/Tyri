@@ -45,6 +45,14 @@ enum BreakMonitoring {
     /// lifting shields; if registration fails, the block remains enforced.
     @discardableResult
     static func startBreak(blockID: UUID, minutes: Int) -> Bool {
+        guard let transition = EnforcementTransaction.begin() else { return false }
+        defer { transition.finish() }
+
+        guard let block = BlockResolution.loadBlock(id: blockID), block.type != .timer,
+              minutes > 0, !breakUsed(blockID: blockID), breakEnd(blockID: blockID) == nil else { return false }
+        // Re-check ownership at execution, not only when SwiftUI displayed the button.
+        if block.type == .schedule { ScheduleEnforcement.reconcile(block: block) }
+        guard block.isEnabled || SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID)) else { return false }
         let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
         let end = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
         let windowEnd = now.addingTimeInterval(TimeInterval(max(15, minutes) * 60))
@@ -69,8 +77,25 @@ enum BreakMonitoring {
     }
 
     static func finishIfExpired(blockID: UUID, now: Date = Date()) {
-        guard let end = breakEnd(blockID: blockID), end <= now else { return }
-        endBreak(blockID: blockID, reapply: true)
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
+        guard let end = breakEnd(blockID: blockID) else { return }
+        if end <= now { endBreak(blockID: blockID, reapply: true); return }
+        guard !DeviceActivityCenter().activities.contains(breakActivityName(for: blockID)) else { return }
+        let cal = Calendar.current
+        let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
+        let monitorEnd = max(end, start.addingTimeInterval(900))
+        let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
+        let schedule = DeviceActivitySchedule(
+            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+            repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
+        do { try DeviceActivityCenter().startMonitoring(breakActivityName(for: blockID), during: schedule) }
+        catch {
+            // Never leave an unbounded pause if its automatic re-lock is lost.
+            endBreak(blockID: blockID, reapply: true)
+        }
     }
 
     /// End the break: tear down the one-shot window and clear the break state.
@@ -80,6 +105,9 @@ enum BreakMonitoring {
     /// `breakUsed` is intentionally NOT cleared here — the allowance resets only
     /// when a fresh activation starts.
     static func endBreak(blockID: UUID, reapply: Bool) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
         DeviceActivityCenter().stopMonitoring([breakActivityName(for: blockID)])
         guard reapply else { return }
@@ -102,6 +130,9 @@ enum BreakMonitoring {
     /// Cancel any break state without re-shielding (window end, tag toggle-off,
     /// emergency override) and re-arm the activation's break allowance.
     static func resetAllowance(blockID: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         endBreak(blockID: blockID, reapply: false)
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.breakUsed(blockID: blockID))
     }

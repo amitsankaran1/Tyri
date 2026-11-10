@@ -47,6 +47,9 @@ class NFCManager: NSObject, ObservableObject {
     /// Tapping the registered tag toggles every `.tag`-type block together: if any
     /// is currently on, turn them all off; otherwise turn them all on.
     func toggleTagBlocks() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { transition.finish() }
+
         let tagBlocks = BlockStore.shared.blocks(ofType: .tag)
         guard !tagBlocks.isEmpty else {
             #if DEBUG
@@ -55,8 +58,9 @@ class NFCManager: NSObject, ObservableObject {
             return
         }
         let anyOn = tagBlocks.contains { $0.isEnabled }
+        for block in tagBlocks { BlockStore.shared.setEnabled(id: block.id, enabled: !anyOn) }
+        BlockStore.shared.flush()
         for block in tagBlocks {
-            BlockStore.shared.setEnabled(id: block.id, enabled: !anyOn)
             if anyOn {
                 ScreenTimeManager.shared.clearBlockShield(id: block.id)
             } else {
@@ -72,6 +76,7 @@ class NFCManager: NSObject, ObservableObject {
     }
 
     func startScanning() {
+        guard !isScanning else { return }
         guard NFCTagReaderSession.readingAvailable else {
             errorMessage = "NFC reading is not available on this device"
             return
@@ -86,9 +91,10 @@ class NFCManager: NSObject, ObservableObject {
     }
 
     func stopScanning() {
-        session?.invalidate()
+        let previous = session
         session = nil
         isScanning = false
+        previous?.invalidate()
     }
 
     func simulateTagScan(withId identifier: String) {
@@ -112,7 +118,10 @@ extension NFCManager: NFCTagReaderSessionDelegate {
     }
 
     nonisolated func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
+        nonisolated(unsafe) let session = session
         Task { @MainActor in
+            guard self.session === session else { return }
+            self.session = nil
             self.isScanning = false
 
             if let nfcError = error as? NFCReaderError {
@@ -172,16 +181,15 @@ extension NFCManager: NFCTagReaderSessionDelegate {
                 return
             }
 
-            // Invalidate immediately without showing alert message for faster dismissal
-            session.invalidate()
-
             Task { @MainActor in
+                guard self.session === session, self.isScanning else { return }
+                // Consume this session before invoking user code. A duplicate or
+                // delayed completion cannot toggle again or stop a newer reader.
+                self.session = nil
+                self.isScanning = false
                 self.lastScannedTag = tagId
-
-                // Call the callback - ContentView will handle toggling if tag is registered
                 self.onTagScanned?(tagId)
-
-                self.stopScanning()
+                session.invalidate()
             }
         }
     }
