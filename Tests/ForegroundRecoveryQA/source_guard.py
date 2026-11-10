@@ -12,6 +12,7 @@ def read(path):
 app = read("Tyri/TyriApp.swift")
 home = read("Tyri/Views/HomeView.swift")
 status = read("Tyri/Views/BlockStatusView.swift")
+content = read("Tyri/ContentView.swift")
 for call in ["reapplyAllSchedules()", "reapplyAllUsageLimits()", "reconcileExpiredLocks()", "restoreActiveBreaksIfAny()"]:
     assert call not in app, f"Synchronous launch maintenance returned: {call}"
 refresh = home[home.index("    private func refresh() {"):]
@@ -20,4 +21,6 @@ for call in ["repairMissingSchedules()", "reapplyAllUsageLimits()", "reconcileEx
 assert "UsageMonitoring.isUsageMonitorActive" not in status, "Rendering must not make a synchronous IPC read"
 assert "ForegroundRecovery.shared.start()" in app
 assert "ForegroundRecovery.shared.request()" in refresh
+assert ".disabled(recovery.isChecking)" not in content, "Recovery must not hide navigation or Emergency Access"
+assert ".allowsHitTesting(false)" in content, "Recovery progress must not intercept navigation taps"
 print("PASS: first-scene entry points and status rendering do not call synchronous monitoring")

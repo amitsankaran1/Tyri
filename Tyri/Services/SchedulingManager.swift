@@ -124,7 +124,7 @@ class SchedulingManager: ObservableObject {
     /// Publish persisted state only; view construction must not acquire a lease
     /// or contact DeviceActivity while the recovery worker owns that lease.
     func publishRecovery(errors: [UUID: String]) {
-        registrationErrors = errors
+        if registrationErrors != errors { registrationErrors = errors }
         var ids: Set<UUID> = []
         let suite = SharedDefaults.suite
         for block in BlockStore.shared.blocks where block.type == .schedule {

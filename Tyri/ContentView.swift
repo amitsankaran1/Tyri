@@ -14,13 +14,13 @@ struct ContentView: View {
                 .tag(1)
         }
         .tint(.blue)
-        .disabled(recovery.isChecking)
         .overlay(alignment: .top) {
             if recovery.isChecking {
                 ProgressView("Checking saved blocks…")
                     .padding()
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityIdentifier("foreground-recovery")
+                    .allowsHitTesting(false)
             }
         }
         #if DEBUG
