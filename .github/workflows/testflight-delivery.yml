@@ -28,7 +28,7 @@ on:
 
 permissions:
   contents: write # Create only protected immutable candidate tags from approved main.
-  issues: write
+  pull-requests: write # The durable delivery receipt is a PR conversation comment.
 
 jobs:
   verify-internal:
