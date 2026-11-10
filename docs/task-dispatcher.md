@@ -1,51 +1,25 @@
 # Hosted task dispatcher
 
-Approved pilot: Tyri only; scheduled check every hour; one active implementation per project. Filing a clear bug through any of Amit's agents authorizes investigation and an eligible low-risk fix through a PR. Human merge review remains required. This replaces chat-only pickup for the enabled pilot.
+The existing native routine is [Advance agent tasks](https://chatgpt.com/scheduled?automationId=6af2349203a08190bf217be3aaaaf9f9&automationSource=cloud), enabled hourly in America/New_York. Its identity and cadence are unchanged; its prompt now covers new ideas, drafts, research, bugs and delivery requests across projects.
 
-## Activation requirements
+Use [ask-matt](https://app.notion.com/p/9b34cc3b74c0496b82499bc013c9c135) for skill routing and the [Agent Operating Guide](https://app.notion.com/p/3ee16e0e0e3a814d9fbbe386b62fad21) for shared phases, authority and ownership. See [the saved native prompt](native-routine-prompt.md).
 
-Use a native ChatGPT/Codex routine first, rather than a separate GitHub Actions dispatcher service. If its run has the repository and coding tools, that run may enrich and implement directly; a second coding agent is not required. If it cannot execute in the required environment, it must be able to start a verified executor without Amit copying a task link.
+## Run behavior
 
-The routine needs connected Notion access, Tyri repository access, an isolated checkout and durable run/PR evidence. Route tasks requiring Xcode, Simulator or signing to a verified Mac execution/build path. Do not require macOS for documentation-only work, and do not claim iOS checks from an environment without Xcode.
+Reconcile existing task/checkpoint, branch/PR, exact-revision checks, artifact and delivery receipts before fresh pickup. Assess Inbox requests created after 2026-11-09T21:10:00Z; old backlog requires an explicit recorded request to resume. Migration/edit time alone is not activation. Preserve other owners, pauses, stopped projects, Future, Done and Archived.
 
-Configure one serialized dispatcher and enforce the per-project execution slot in the host. A Notion status or body checkpoint is not an atomic lock. If the host cannot enforce single ownership, do not enable dispatch. Do not start independent dispatchers in GB, Dot or Instinct; they remain filing agents and may use the shared enrichment skill.
+Investigate useful next steps, research facts and make reasonable reversible choices within scope. Questions and answers stay in the same task; Human review is for Amit's required decision/approval/acceptance, Blocked for an external dependency. Do not merely summarize the queue when useful authorized work can proceed.
 
-At activation, record the scheduler identity, executor identity, activation timestamp, configured interval and permissions in the pipeline task. Only bugs filed after that timestamp are in the initial automatic pilot. Existing backlog work requires explicit opt-in, preventing surprise pickup of parked or historical reports.
+Tyri's verified claim lives on the separate automation/tyri-dispatch-state branch at .automation/dispatch-lock.json. Acquire/release with expected content SHA, unique owner/generation tokens and read-back of ownership. A stale competing update returned 409 in the integration probe. Hold the claim through bounded mutation and persisted checkpoint, then release only your own claim when execution stops. Reacquire/reconcile on the next run; do not hold it indefinitely while waiting for CI, review or a person. Do not auto-clear another or uncertain crashed owner.
 
-Validate one real filed bug from intake to accepted execution and a PR. Also verify that overlapping checks cannot launch duplicate work, an active task is skipped, an ambiguous report requests a decision, and an excluded change is not implemented automatically. Record the actual results. Instructions or a recurring Notion summary alone do not satisfy activation.
+Other projects need a compatible claim/execution path; do not place their private metadata into Tyri's public repository. Missing setup becomes a concrete dependency, not permission to improvise a competing dispatcher. Ordinary intake edits reread and preserve the task's current content.
 
-## Scheduled prompt
+The reviewer is a role, not a fixed product. An independent reviewer must accept the handoff; moving a task to Agent review does not invoke another agent. Current Tyri merges still require Amit's explicit approval. Delivery uses the project's established authorized executor and native CI, and Done requires the agreed outcome including requested availability/acceptance.
 
-Check Tasks at https://app.notion.com/p/69b0ba1ab76140ccbc98da7cf3b607ed for new software bug reports in the enabled Tyri pilot. Read the current dispatcher activation record in https://app.notion.com/p/41316e0e0e3a819793daf1454045a641 first. Stop without dispatch if it is not marked activated with a verified host/executor and activation timestamp.
+## Verified capabilities and gaps
 
-Load the shared enrich-bug-task skill from https://app.notion.com/p/41316e0e0e3a815cbd30e796d7e29bac and the live Tyri project/testing profile. Read the actual database schema before querying. Scope candidates to the Tyri relation, new reports after activation, and unstarted Inbox bugs. Inbox is a filter, not authorization: require the standing pilot authority and a clear defect report as well. Do not pick up ideas/features, Future/parked, paused, Done, Archived, Human review or work already owned by an executor.
+The hosted run has Linux shell and connected Notion/GitHub access. Prior probes verified source reads, a fixture draft PR and result persistence; the fixture PR #26 was closed and must never be repeated. No Swift/Xcode or separate Cloud-task launcher is guaranteed in the routine.
 
-Inspect current task checkpoints and existing repo branches/PRs. Enrich eligible reports using the shared skill, preserving original evidence. No unchanged-task rewrites or repeated questions on every poll. Missing user intent and higher-risk decisions go to Human review with a concise question and recommendation. Missing runtime access is recorded as an operational dependency.
+Tyri Xcode Cloud PR triggering is verified, but the latest full Cloud test action failed. The internal-candidate workflow remains disabled; the hosted routine has no provisioned Apple credential and no assigned independent reviewer. Current facts live in the [Tyri project](https://app.notion.com/p/2e616e0e0e3a80148841ff8ca2cb3647) and [CI task](https://app.notion.com/p/3cb16e0e0e3a81438ddbd3a49c70e1ed). A saved prompt does not prove end-to-end delivery.
 
-Before launch, acquire the host's project execution slot and re-read the task and its material scope. If another implementation is active, leave the task queued and release this check's resources. The slot belongs to the executor run until completion or confirmed termination, not merely until the polling check ends. On an uncertain launch result, inspect the existing run identity; do not launch another attempt. On expired/disconnected ownership, reconcile the actual run and PR before releasing/retrying.
-
-Dispatch the exact task URL, scope snapshot and acceptance criteria to one coding executor. Record its accepted run identity/link and branch in the task; move it to In progress only after acceptance. A proposed handoff is not a started implementation. If the report materially changes during the run, reconcile intent before continuing.
-
-The executor reproduces/otherwise establishes the failure, implements narrowly, runs relevant checks, and reassesses risk against the actual diff. If scope grows or exclusions are touched, stop for Human review. Return a draft PR with source revision, test/review evidence, limitations and the exact requested decision. No automatic merge or deployment. Record a resumable checkpoint on failure; do not retry a code failure indefinitely on every poll.
-
-Do not send messages through GB, Dot, email or other channels. Keep results in the task and the executor's normal run output. Do not change schemas, enable other projects or widen source access. Done requires the agreed verified outcome, including delivery when requested.
-
-## Current state
-
-The shared skill is created and enabled. A native hosted task has been created and tested: connected Notion/GitHub reads, Linux shell validation, a fixture-only draft PR (#26), and a result written back to the pipeline task. It executes directly; a separate Cloud-task launcher is absent. No Xcode/Swift testing or TestFlight delivery was verified. Initial implementation scope is documentation-only factual bugs. See [the saved native prompt](native-routine-prompt.md).
-
-The native hosted scheduler supports at most one run per hour. The proposed 15-minute interval was rejected as unsupported. Amit approved hourly pickup. The existing native task is active with exact_schedule and RRULE:FREQ=HOURLY;INTERVAL=1, starting 2026-11-09 22:30 UTC. The saved prompt and UI schedule were verified. The original fixture probe must not be repeated.
-
-Single-owner execution is initialized on the separate `automation/tyri-dispatch-state` branch at `.automation/dispatch-lock.json`. Acquire and release with GitHub's expected content SHA, unique owner/generation tokens, and ownership verification. Integration testing confirmed a competing stale-SHA update returns 409 and leaves the owner intact. Never treat task Status as ownership; never auto-clear an uncertain crashed run's slot. This lock is runtime metadata, not a new task lifecycle.
-
-## Native environment setup and first probe
-
-Create a private Tyri environment using the native Cloud environment setup flow with repository `amitsankaran1/Tyri`. Ask setup to inspect and report the actual toolchain and permissions rather than assuming it supports Xcode. Publish only after the setup report identifies what can run.
-
-Use this setup request:
-
-> Prepare this repository for bounded coding tasks. Identify the checked-out branch/revision and installed tools. Preserve bundle identifiers, signing settings and app behavior. Verify repository read access and the commands available for documentation validation and deterministic checks. If Swift or Xcode is unavailable, report that explicitly; do not substitute a different check or claim iOS build readiness. Do not request distribution credentials for this first documentation-only probe. Save setup changes only if needed, and report the resulting environment capabilities.
-
-The first routine probe should read the enrichment skill through connected Notion access, inspect a specified read-only task, identify its project and return the environment/run identity and repository revision. If its tool set cannot read Notion or execute repository commands, stop and report the missing capability before activating pickup.
-
-Then test an explicitly scoped documentation fix through a draft PR. A successful manual `codex cloud exec` submission proves only that the CLI can start a task; it does not prove that an unattended native routine has the same access. Verify the actual scheduled/Run now routine path before declaring the phone-to-coding loop ready.
+Do not activate independent competing pickup loops in filing agents, export credentials, widen source access, contact other people/agents through messaging tools, merge or distribute without the applicable authority.
