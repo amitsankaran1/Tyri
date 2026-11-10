@@ -2,7 +2,7 @@
 
 Implementation task: https://app.notion.com/p/3cb16e0e0e3a81438ddbd3a49c70e1ed
 
-This is the proposed configuration, not a claim that cloud CI or automatic delivery is enabled. Provider and automatic release trigger await Amit's decision. The hourly bug routine remains documentation-only until the iOS execution path is verified.
+Approved policy: use Xcode Cloud, with app-changing merges to `main` automatically producing an internal TestFlight candidate after successful checks. Configuration and delivery still require Apple account setup and end-to-end verification; they are not enabled yet. The hourly bug routine remains documentation-only until the iOS execution path is verified.
 
 ## Source prerequisite
 
@@ -10,18 +10,18 @@ On November 9, 2026, PR #24 was merged with Amit's reconciliation authorization.
 
 Workflow PR #25 includes that main merge and is checked against the combined source. Keep `deferred/nl-creation-2.4` out of this rollout. The one-time reconciliation does not authorize future automatic merges or release triggers.
 
-## Proposed Xcode Cloud configuration
+## Approved Xcode Cloud configuration
 
 Keep two workflows using `Tyri.xcodeproj`, shared scheme `Tyri`, and a supported pinned Xcode/macOS pair. Verify the cloud toolchain against the local Xcode 27.2 baseline; do not select an unavailable cloud version based on the local installation.
 
 | Workflow | Start | Checks/actions | Delivery |
 | --- | --- | --- | --- |
 | Tyri PR checks | PR creation/update targeting `main` | Deterministic harnesses, simulator build/test, analyze | None |
-| Tyri internal candidate | App-affecting changes merged to `main`, if approved | Deterministic harnesses, simulator test, Release archive, signing | Post-action to existing `Amit Internal` only |
+| Tyri internal candidate | App-affecting changes merged to `main` | Deterministic harnesses, simulator test, Release archive, signing | Post-action to existing `Amit Internal` only |
 
 Configure file/folder conditions so documentation-only merges do not produce new binaries. Include app, shared source, extension, resources, project/scheme, tests, build scripts and release configuration; do not use only `*.swift`. A required PR check must still report for documentation-only PRs: initially run the PR workflow for all PRs and filter only the candidate workflow. Workflow/test changes can themselves require a candidate when they affect build behavior.
 
-For Xcode Cloud, executable `ci_scripts/ci_post_clone.sh` can call `bash scripts/check.sh`; a nonzero exit must fail the workflow. Do not install ad-hoc downloaded dependencies in the hook. Keep signed distribution out of PR workflows and never expose custom delivery secrets to PR code. Inspect cloud signing access and any fork behavior before enabling PR triggers.
+The executable `ci_scripts/ci_post_clone.sh` calls `bash scripts/check.sh` and propagates failure to Xcode Cloud. It uses the script's own repository location, so it does not depend on the service's working directory. Do not install ad-hoc downloaded dependencies in the hook. Keep signed distribution out of PR workflows and never expose custom delivery secrets to PR code. Inspect cloud signing access and any fork behavior before enabling PR triggers.
 
 Archive for **TestFlight and App Store** eligibility while distributing automatically only to the internal group. This preserves the option to promote the same accepted binary later. Choosing **TestFlight Internal Only** would require another binary for external testers. Neither selection authorizes an App Store release or external beta submission.
 
