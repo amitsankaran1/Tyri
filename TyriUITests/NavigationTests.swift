@@ -30,15 +30,26 @@ final class NavigationTests: XCTestCase {
         tab.tap()
     }
 
+    private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: element)
+        return XCTWaiter.wait(for: [gone], timeout: timeout) == .completed
+    }
+
     func testAdHocBlockSetupAndValidation() throws {
         app.buttons["ad-hoc-block"].tap()
         XCTAssertTrue(app.navigationBars["Block for a while"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Start blocking"].isEnabled)
         app.buttons["ad-hoc-list"].tap()
-        app.buttons["Social media"].tap()
+        let social = app.buttons["Social media"]
+        XCTAssertTrue(social.waitForExistence(timeout: 5))
+        social.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(waitUntilGone(social))
         app.buttons["ad-hoc-duration"].tap()
-        app.buttons["Custom"].tap()
-        XCTAssertTrue(app.steppers["custom-block-duration"].exists)
+        let custom = app.buttons["Custom"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 5))
+        custom.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(waitUntilGone(custom))
+        XCTAssertTrue(app.steppers["custom-block-duration"].waitForExistence(timeout: 5))
         capture("ad-hoc-custom-duration")
         // No authorization bypass: Simulator cannot authorize Screen Time.
         app.buttons["Done"].tap()
@@ -170,6 +181,8 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         XCTAssertEqual(name.value as? String, "Work focus")
         let list = app.switches["Social media"]
+        // Recovery guidance now precedes configuration in the lazy Form.
+        for _ in 0..<8 where !list.exists { app.swipeUp() }
         XCTAssertTrue(list.exists)
         XCTAssertFalse(list.isEnabled, "An active block's saved list must not be removable")
         capture("04-active-block-compact")
@@ -243,16 +256,22 @@ final class NavigationTests: XCTestCase {
         app.textFields["Block name"].typeText("Evening focus")
         XCTAssertTrue(app.buttons["Save"].isEnabled)
         app.buttons["Save"].tap()
-        // Simulator registration fails without Screen Time authorization. The
-        // saved editor now stays open and offers an actionable retry.
-        let retries = app.buttons.matching(identifier: "Retry schedule")
-        if retries.firstMatch.waitForExistence(timeout: 3) {
+        // Saving persists the rule, but failed simulator registration keeps
+        // its editor open. Recovery now requests permission before retrying.
+        let focus = app.navigationBars["Focus"]
+        let editor = app.navigationBars["New block"]
+        if !waitUntilGone(editor, timeout: 3) {
+            XCTAssertTrue(editor.exists)
+            let recovery = app.staticTexts["block-recovery-instructions"]
+            for _ in 0..<8 where !recovery.isHittable { app.swipeDown() }
+            XCTAssertTrue(recovery.waitForExistence(timeout: 5))
+            XCTAssertTrue(recovery.label.contains("Allow Screen Time access"))
+            XCTAssertFalse(app.buttons["retry-blocking"].exists)
             capture("papercut-schedule-error")
-            let retry = try XCTUnwrap(retries.allElementsBoundByIndex.first(where: { $0.isHittable }))
-            retry.tap()
-            XCTAssertTrue(retries.firstMatch.exists)
-            app.buttons["Cancel"].tap()
+            app.navigationBars["New block"].buttons["Cancel"].tap()
         }
+        XCTAssertTrue(waitUntilGone(editor))
+        XCTAssertTrue(focus.waitForExistence(timeout: 5))
         // The status cards make this saved row fall below the initial viewport.
         for _ in 0..<5 {
             if app.staticTexts["Evening focus"].isHittable { break }

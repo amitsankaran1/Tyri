@@ -2,7 +2,7 @@
 
 Implementation task: https://app.notion.com/p/3cb16e0e0e3a81438ddbd3a49c70e1ed
 
-Approved policy: use Xcode Cloud, with app-changing merges to `main` automatically producing an internal TestFlight candidate after successful checks. Configuration and delivery still require Apple account setup and end-to-end verification; they are not enabled yet. The hourly bug routine remains documentation-only until the iOS execution path is verified.
+Approved policy: use Xcode Cloud, with app-changing merges to `main` automatically producing an internal TestFlight candidate after successful checks. PR checks are provisioned and main requires all three Xcode Cloud checks. Live activation and revision-specific verification evidence belong in the implementation task linked above; checked-in payloads alone do not prove a service is enabled or a build available. The internal workflow starts disabled until verification and workflow-PR approval. The hourly bug routine remains documentation-only until the iOS execution path is verified and pickup policy is explicitly expanded.
 
 ## Source prerequisite
 
@@ -12,7 +12,7 @@ Workflow PR #25 includes that main merge and is checked against the combined sou
 
 ## Approved Xcode Cloud configuration
 
-Keep two workflows using `Tyri.xcodeproj`, shared scheme `Tyri`, and a supported pinned Xcode/macOS pair. Verify the cloud toolchain against the local Xcode 27.2 baseline; do not select an unavailable cloud version based on the local installation.
+Two workflows use `Tyri.xcodeproj`, shared scheme `Tyri`, pinned Xcode 27.2 (27B52) and macOS 27.2 (26B123), with iPhone 18 Pro / iOS 27.2 simulator tests. Available cloud versions were verified through Apple's API. [CLI configuration, identities and provisioning payloads](../ci_scripts/xcode-cloud/README.md) are checked in for review; Git file changes alone do not change Apple's workflow settings.
 
 | Workflow | Start | Checks/actions | Delivery |
 | --- | --- | --- | --- |
@@ -22,6 +22,8 @@ Keep two workflows using `Tyri.xcodeproj`, shared scheme `Tyri`, and a supported
 Configure file/folder conditions so documentation-only merges do not produce new binaries. Include app, shared source, extension, resources, project/scheme, tests, build scripts and release configuration; do not use only `*.swift`. A required PR check must still report for documentation-only PRs: initially run the PR workflow for all PRs and filter only the candidate workflow. Workflow/test changes can themselves require a candidate when they affect build behavior.
 
 The executable `ci_scripts/ci_post_clone.sh` calls `bash scripts/check.sh` and propagates failure to Xcode Cloud. It uses the script's own repository location, so it does not depend on the service's working directory. Do not install ad-hoc downloaded dependencies in the hook. Keep signed distribution out of PR workflows and never expose custom delivery secrets to PR code. Inspect cloud signing access and any fork behavior before enabling PR triggers.
+
+The hook also generates `TestFlight/WhatToTest.en-US.txt` with the build/source identity and `release/WhatToTest.txt`. App-changing fixes must keep that task-specific guidance current. `ITSAppUsesNonExemptEncryption=false` carries forward the existing release declaration; review it if cryptographic functionality changes. Unsigned simulator builds are compilation evidence only: local UI execution needs simulator signing and usable App Group access, without relaxing enforcement assertions to accommodate an unsigned build.
 
 Archive for **TestFlight and App Store** eligibility while distributing automatically only to the internal group. This preserves the option to promote the same accepted binary later. Choosing **TestFlight Internal Only** would require another binary for external testers. Neither selection authorizes an App Store release or external beta submission.
 
