@@ -57,6 +57,9 @@ struct BlockStatusPresentation {
         guard canDisplayActivity else {
             return Self(state: .setup, detail: "Allow access in Settings to start this block.")
         }
+        if ForegroundRecovery.shared.isChecking {
+            return Self(state: .unavailable, detail: "Checking saved blocks with Screen Time…")
+        }
         if ScreenTimeManager.shared.isBlockActive(block),
            let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldError(blockID: block.id)) {
             return Self(state: .unavailable, detail: error.isEmpty ? "iOS did not confirm this block. Follow the recovery steps below." : error)
@@ -88,7 +91,7 @@ struct BlockStatusPresentation {
                         lockStart: lockEnd?.addingTimeInterval(-Double(block.usageLockMinutes * 60)), lockEnd: lockEnd)
         }
         if block.type == .timer {
-            guard UsageMonitoring.isUsageMonitorActive(for: block.id) else {
+            guard ForegroundRecovery.shared.registeredUsageIDs.contains(block.id) else {
                 return Self(state: .unavailable, detail: "Open this block to check its app lists and save to retry.")
             }
             return Self(state: .tracking, detail: "Counts usage toward your next pause.", usedMinutes: UsageProgress.reported(blockID: block.id), limitMinutes: block.usageLimitMinutes)

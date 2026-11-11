@@ -1,4 +1,5 @@
 import Foundation
+enum QAClock { static var now = Date() }
 struct DeviceActivityName: Hashable { let rawValue: String }
 struct DeviceActivityEvent {
  struct Name: Equatable { let rawValue: String; init(rawValue: String) { self.rawValue = rawValue }; init(_ value: String) { rawValue = value } }
@@ -44,7 +45,8 @@ enum SharedDefaults {
  }
 }
 enum Kind { case timer, schedule, tag }
-struct BlockRule { var id: UUID = UUID(); var name: String = ""; var appGroupIDs: [UUID] = []; var type: Kind = .timer; var isEnabled = false; var usageLockMinutes = 180; var usageLimitMinutes: Int? = 30 }
+struct BlockingSchedule {}
+struct BlockRule { var id: UUID = UUID(); var name: String = ""; var appGroupIDs: [UUID] = []; var type: Kind = .timer; var isEnabled = false; var usageLockMinutes = 180; var usageLimitMinutes: Int? = 30; var schedule: BlockingSchedule? = nil }
 struct AppGroup: Codable, Equatable { var id = UUID(); var name = "Test list" }
 enum BlockResolution {
  struct Tokens { var apps: Set<Int> = [1]; var categories: Set<Int> = []; var webDomains: Set<Int> = []; var domains: Set<String> = ["example.com"]; var isEmpty: Bool { false } }
@@ -57,12 +59,13 @@ enum State { static var shield = false; static var shields: Set<UUID> = [] }
 enum BlockingActuator {
  static func start(blockID: UUID, bypassWeekday: Bool, setRunningFlag: Bool, resetBreakAllowance: Bool = true) { State.shield = true; State.shields.insert(blockID) }
  static func apply(tokens: BlockResolution.Tokens, blockID: UUID) { State.shield = true; State.shields.insert(blockID) }
- static func end(blockID: UUID) { State.shield = false; State.shields.remove(blockID) }
+ static func end(blockID: UUID, stopMonitoring: Bool = true) { State.shield = false; State.shields.remove(blockID) }
  static func clearShields(blockID: UUID) { State.shield = false; State.shields.remove(blockID) }
 }
 enum ScheduleEnforcement {
  static func reconcile(blockID: UUID) {}
- static func reconcile(block: BlockRule) {}
+ static func reconcile(block: BlockRule, stopMonitoring: Bool = true) {}
+ static func registrationContext(_ schedule: BlockingSchedule) -> String { "schedule" }
 }
 @main struct CallbackQA {
  static func main() {
@@ -71,9 +74,9 @@ enum ScheduleEnforcement {
   let lock = DeviceActivityName(rawValue: "lock.\(id)")
   let usage = DeviceActivityName(rawValue: "usage.\(id)")
   let key = SharedDefaults.Keys.usageLockEnd(blockID: id)
-  let end = Date().addingTimeInterval(10800)
+  let end = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970)).addingTimeInterval(10800)
   var checks = 0;var failures = 0
-  func check(_ condition: Bool, _ label: String) { precondition(condition, label); checks += 1 }
+  func check(_ condition: Bool, _ label: String) { checks += 1; if !condition { failures += 1 }; print("\(condition ? "PASS" : "FAIL"): \(label)") }
   SharedDefaults.suite.set(end, forKey: key); State.shield = true
   monitor.intervalDidEnd(for: lock)
   check(State.shield && SharedDefaults.suite.object(forKey: key) as? Date == end, "early end preserves deadline and shield")
@@ -85,14 +88,16 @@ enum ScheduleEnforcement {
   UsageMonitoring.stopLockout(for: id); State.shield = false
   monitor.intervalDidStart(for: lock); monitor.intervalDidEnd(for: lock)
   check(!State.shield && SharedDefaults.suite.object(forKey: key) == nil, "stale callbacks do not create an orphan shield")
-  SharedDefaults.suite.set(Date().addingTimeInterval(-1), forKey: key); State.shield = true
-  monitor.intervalDidEnd(for: lock)
+  UsageMonitoring.startLockout(blockID: id, minutes: 1)
+  QAClock.now = (SharedDefaults.suite.object(forKey: key) as! Date).addingTimeInterval(1)
+  monitor.intervalDidEnd(for: UsageMonitoring.lockActivityName(for: id))
   check(!State.shield && SharedDefaults.suite.object(forKey: key) == nil, "genuine expiry releases")
   let afterExpiry = DeviceActivityCenter.starts; monitor.intervalDidEnd(for: lock)
   check(DeviceActivityCenter.starts == afterExpiry, "duplicate expiry does not reset budget again")
   BlockResolution.blocks[id]!.isEnabled = true
-  SharedDefaults.suite.set(Date().addingTimeInterval(-1), forKey: key)
-  monitor.intervalDidEnd(for: lock)
+  UsageMonitoring.startLockout(blockID: id, minutes: 1)
+  QAClock.now = (SharedDefaults.suite.object(forKey: key) as! Date).addingTimeInterval(1)
+  monitor.intervalDidEnd(for: UsageMonitoring.lockActivityName(for: id))
   check(State.shield, "expiry preserves manual block")
   BlockResolution.blocks[id]!.type = .tag; State.shield = false
   monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: usage)
@@ -108,7 +113,7 @@ enum ScheduleEnforcement {
   let breakEnd = BreakMonitoring.breakEnd(blockID: id)!
   monitor.intervalDidEnd(for: activity)
   check(BreakMonitoring.breakEnd(blockID: id) == breakEnd && !State.shield, "early break end preserves current break")
-  SharedDefaults.suite.set(Date().addingTimeInterval(-1), forKey: SharedDefaults.Keys.breakEnd(blockID: id))
+  QAClock.now = breakEnd.addingTimeInterval(1)
   monitor.intervalWillEndWarning(for: activity)
   check(State.shield && BreakMonitoring.breakEnd(blockID: id) == nil, "warning restores shield at real break expiry")
   // A completed allowance must use a genuinely new monitor identity.
@@ -117,8 +122,8 @@ enum ScheduleEnforcement {
   let firstCycle = UsageMonitoring.usageActivityName(for: id)
   monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: firstCycle)
   check(State.shield, "first cycle threshold shields")
-  SharedDefaults.suite.set(Date().addingTimeInterval(-1), forKey: key)
-  monitor.intervalDidEnd(for: lock)
+  QAClock.now = (SharedDefaults.suite.object(forKey: key) as! Date).addingTimeInterval(1)
+  monitor.intervalDidEnd(for: UsageMonitoring.lockActivityName(for: id))
   let secondCycle = UsageMonitoring.usageActivityName(for: id)
   check(firstCycle != secondCycle && !DeviceActivityCenter().activities.contains(firstCycle), "expiry rotates and removes consumed allowance")
   monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: firstCycle)
@@ -130,8 +135,9 @@ enum ScheduleEnforcement {
   monitor.intervalDidEnd(for: lock)
   check(State.shield && SharedDefaults.suite.object(forKey: key) as? Date == secondEnd, "second lockout cannot end early")
   DeviceActivityCenter.fail = true
+  let beforeFailedReplacement = UsageMonitoring.usageActivityName(for: id)
   check(!UsageMonitoring.startUsageMonitor(forBlockID: id), "failed rearm is reported")
-  check(UsageMonitoring.usageActivityName(for: id) == secondCycle && SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: id)) != nil, "failed replacement preserves current registration and records error")
+  check(UsageMonitoring.usageActivityName(for: id) == beforeFailedReplacement && SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: id)) != nil, "failed replacement preserves current registration and records error")
   DeviceActivityCenter.fail = false
   UsageMonitoring.startUsageMonitor(forBlockID: id)
   check(SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageError(blockID: id)) == nil, "retry clears tracking error")
@@ -143,7 +149,8 @@ enum ScheduleEnforcement {
   DeviceActivityCenter.fail = false
   UsageMonitoring.reconcileLockout(blockID: id)
   check(SharedDefaults.suite.object(forKey: key) as? Date == savedEnd && SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: id)) == nil, "repair restores expiry monitor without extending lock")
-  check(DeviceActivityCenter.schedules[lock]?.warningTime?.second != nil, "short recovered lock gets deadline warning")
+  check(DeviceActivityCenter.schedules[UsageMonitoring.lockActivityName(for: id)]?.warningTime?.second != nil, "short recovered lock gets deadline warning")
+  QAClock.now = Date()
   let now = Date()
   do {
    DeviceActivityCenter.fail = true
@@ -170,6 +177,33 @@ enum ScheduleEnforcement {
    AdHocMonitoring.reconcile(now: now.addingTimeInterval(3601))
    check(AdHocMonitoring.session == nil && !State.shield, "background expiry clears temporary session")
   } catch { preconditionFailure("Unexpected ad hoc error: \(error)") }
+  // A provisional replacement must not disarm the already accepted allowance.
+  let ownerID = UUID(); BlockResolution.blocks[ownerID] = BlockRule(id: ownerID)
+  check(UsageMonitoring.startUsageMonitor(forBlockID: ownerID), "protocol setup registers accepted allowance")
+  let acceptedOwner = UsageMonitoring.usageActivityName(for: ownerID)
+  let semantic = UsageMonitoring.registrationContext(for: BlockResolution.blocks[ownerID]!, groups: [])!
+  UsageProgress.record(9, blockID: ownerID)
+  let candidate = MonitorRegistration.reserve("usage.\(ownerID.uuidString)", legacyName: UsageMonitoring.legacyUsageName(ownerID), context: semantic)!
+  check(UsageMonitoring.usageActivityName(for: ownerID) == acceptedOwner && UsageProgress.reported(blockID: ownerID) == 9,
+        "pending repair preserves accepted identity and progress")
+  BlockResolution.blocks[ownerID]!.name = "Cosmetic rename"
+  check(UsageMonitoring.registrationContext(for: BlockResolution.blocks[ownerID]!, groups: []) == semantic,
+        "cosmetic rename does not change allowance ownership")
+  monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: acceptedOwner)
+  let ownedDeadline = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: ownerID)) as! Date
+  check(UsageMonitoring.finishRegistration(candidate, context: semantic, succeeded: true) == .obsolete,
+        "consumption invalidates provisional replacement")
+  check(SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: ownerID)) as? Date == ownedDeadline && State.shields.contains(ownerID),
+        "late candidate cannot undo accepted threshold protection")
+  let progressID = UUID(); BlockResolution.blocks[progressID] = BlockRule(id: progressID)
+  check(UsageMonitoring.startUsageMonitor(forBlockID: progressID), "progress protocol setup")
+  let progressContext = UsageMonitoring.registrationContext(for: BlockResolution.blocks[progressID]!, groups: [])!
+  let progressCandidate = MonitorRegistration.reserve("usage.\(progressID.uuidString)", legacyName: UsageMonitoring.legacyUsageName(progressID), context: progressContext)!
+  try! DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: progressCandidate.name), during: UsageMonitoring.allDaySchedule)
+  monitor.eventDidReachThreshold(DeviceActivityEvent.Name("progress.1"), activity: DeviceActivityName(rawValue: progressCandidate.name))
+  check(UsageProgress.reported(blockID: progressID) == 1, "early progress promotes pending owner")
+  check(UsageMonitoring.finishRegistration(progressCandidate, context: progressContext, succeeded: true) == .alreadyAccepted
+        && UsageProgress.reported(blockID: progressID) == 1, "late commit cannot reset early progress")
   // Saturate the real documented activity budget, then consume an allowance.
   DeviceActivityCenter.schedules = [:];DeviceActivityCenter.events = [:]
   let cappedID = UUID();BlockResolution.blocks[cappedID] = BlockRule(id: cappedID)
@@ -184,7 +218,7 @@ enum ScheduleEnforcement {
    let id = UUID();BlockResolution.blocks[id] = BlockRule(id: id)
    UsageMonitoring.startLockout(blockID: id, minutes: minutes)
    let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as! Date
-   check(abs(end.timeIntervalSinceNow - Double(minutes * 60)) < 2, "exact lock deadline \(minutes)")
+   check(abs(end.timeIntervalSince(QAClock.now) - Double(minutes * 60)) < 2, "exact lock deadline \(minutes)")
    let schedule = DeviceActivityCenter.schedules[UsageMonitoring.lockActivityName(for: id)]!
    let start = Calendar.current.date(from: schedule.intervalStart)!, finish = Calendar.current.date(from: schedule.intervalEnd)!
    check(finish.timeIntervalSince(start) >= 900, "OS interval minimum \(minutes)")
@@ -195,6 +229,6 @@ enum ScheduleEnforcement {
   let fallbackID=UUID();BlockResolution.blocks[fallbackID] = BlockRule(id:fallbackID)
   check(UsageMonitoring.startUsageMonitor(forBlockID:fallbackID), "progress event rejection preserves enforcement-only registration")
   DeviceActivityCenter.maxEvents = 1000
-  print("RESULT: \(checks) passed / \(failures) failed lifecycle regression checks (production callbacks, usage and break helpers; OS/store doubles)")
+  print("RESULT: \(checks-failures) passed / \(failures) failed lifecycle regression checks (production callbacks, usage and break helpers; OS/store doubles)")
  }
 }

@@ -1,4 +1,9 @@
 import Foundation
+@MainActor final class ForegroundRecovery {
+ static let shared=ForegroundRecovery()
+ var isChecking=false
+ var registeredUsageIDs:Set<UUID>=[]
+}
 struct Schedule {func activeWindow()->DateInterval?{nil};var summary="Schedule"}
 struct BlockRule {enum Kind{case timer,schedule,tag};var id=UUID();var type:Kind = .timer;var isEnabled=false;var schedule:Schedule?;var usageLimitMinutes:Int?=30;var usageLockMinutes=180}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-status-\(UUID())")!;enum Keys{static func shieldError(blockID:UUID)->String{"shield.\(blockID)"};static func usageError(blockID:UUID)->String{"usage.\(blockID)"};static func usageLockError(blockID:UUID)->String{"lock.\(blockID)"}}}
@@ -13,8 +18,12 @@ enum BlockingEndDescription {static func detail(timedEnd:Date?,manual:Bool,tag:B
 @main struct Tests {
  @MainActor static func main(){
   let b=BlockRule();var n=0
+  ForegroundRecovery.shared.registeredUsageIDs=[b.id]
   func check(_ yes:Bool,_ name:String){precondition(yes,name);n+=1}
   check(BlockStatusPresentation.current(for:b).state == .tracking,"healthy timer remains tracking")
+  ForegroundRecovery.shared.isChecking=true
+  check(BlockStatusPresentation.current(for:b).state == .unavailable,"pending recovery must not claim tracking")
+  ForegroundRecovery.shared.isChecking=false
   ScreenTimeManager.shared.active=true
   for key in [SharedDefaults.Keys.shieldError(blockID:b.id),SharedDefaults.Keys.usageLockError(blockID:b.id),SharedDefaults.Keys.usageError(blockID:b.id)] {
    SharedDefaults.suite.set("",forKey:key)
@@ -29,7 +38,7 @@ enum BlockingEndDescription {static func detail(timedEnd:Date?,manual:Bool,tag:B
   check(BlockStatusPresentation.current(for:b).state == .paused,"healthy break retains paused state")
   ScreenTimeManager.shared.authorizationStatus = .denied
   check(BlockStatusPresentation.current(for:b).state == .setup,"permission recovery takes precedence")
-  ScreenTimeManager.shared.authorizationStatus = .approved;ScreenTimeManager.shared.active=false;BreakMonitoring.paused=false;UsageMonitoring.registered=false
+  ScreenTimeManager.shared.authorizationStatus = .approved;ScreenTimeManager.shared.active=false;BreakMonitoring.paused=false;UsageMonitoring.registered=false;ForegroundRecovery.shared.registeredUsageIDs=[]
   check(BlockStatusPresentation.current(for:b).state == .unavailable,"missing monitor requires recovery")
   print("PASS: \(n) production recovery-presentation checks")
  }

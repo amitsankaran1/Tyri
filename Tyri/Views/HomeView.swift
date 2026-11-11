@@ -19,6 +19,7 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var showAdHoc = false
     @StateObject private var adHoc = AdHocManager.shared
+    @StateObject private var recovery = ForegroundRecovery.shared
 
     @StateObject private var cooldown = CooldownManager.shared
     @State private var refreshDate = Date()
@@ -149,7 +150,7 @@ struct HomeView: View {
             guard scenePhase == .active else { return }
             refreshDate = now
             usage.refresh()
-            adHoc.refresh()
+            adHoc.refresh(reconcile: false)
         }
         .onAppear(perform: refresh)
         .onChange(of: scenePhase) { phase in if phase == .active { refresh() } }
@@ -230,14 +231,7 @@ struct HomeView: View {
         }
     }
     private func refresh() {
-        breaks.restoreActiveBreaksIfAny()
-        adHoc.refresh()
         screenTime.checkAuthorizationStatus()
-        screenTime.restoreBlockingIfNeeded()
-        usage.reconcileExpiredLocks()
-        if screenTime.authorizationStatus == .approved {
-            scheduling.repairMissingSchedules()
-            usage.reapplyAllUsageLimits()
-        }
+        ForegroundRecovery.shared.request()
     }
 }

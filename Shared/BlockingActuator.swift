@@ -55,11 +55,11 @@ enum BlockingActuator {
     /// Clear the block's shield and running flag. Mirrors `intervalDidEnd`.
     /// Also tears down any in-flight break — a window that ends mid-break must not
     /// leave a pending re-lock window or stale break state behind.
-    static func end(blockID: UUID) {
+    static func end(blockID: UUID, stopMonitoring: Bool = true) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
-        BreakMonitoring.resetAllowance(blockID: blockID)
+        BreakMonitoring.resetAllowance(blockID: blockID, stopMonitoring: stopMonitoring)
         clearShields(blockID: blockID)
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: blockID))
     }

@@ -40,8 +40,8 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
         super.intervalDidStart(for: activity)
         log.notice("Interval start \(activity.rawValue, privacy: .public)")
-        if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
-        guard let (kind, blockID) = Self.parse(activity) else { return }
+        if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
+        guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval start: \(activity.rawValue)")
         switch kind {
         case .schedule:
@@ -61,8 +61,8 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
         super.intervalDidEnd(for: activity)
         log.notice("Interval end \(activity.rawValue, privacy: .public)")
-        if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
-        guard let (kind, blockID) = Self.parse(activity) else { return }
+        if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
+        guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval end: \(activity.rawValue)")
         switch kind {
         case .schedule:
@@ -91,8 +91,8 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
         // Shield immediately, then register the timed lockout so it auto-releases.
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
-              activity == UsageMonitoring.usageActivityName(for: blockID),
               DeviceActivityCenter().activities.contains(activity),
+              UsageMonitoring.acceptRegistration(activity.rawValue, for: block, groups: BlockResolution.loadGroups()),
               (block.usageLimitMinutes ?? 0) > 0 else { return }
         if event.rawValue.hasPrefix("progress."),
            let minute = Int(event.rawValue.dropFirst("progress.".count)),
@@ -111,8 +111,8 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         defer { transition.finish() }
 
         super.intervalWillEndWarning(for: activity)
-        if activity.rawValue.hasPrefix("adhoc.") { AdHocMonitoring.reconcile(); return }
-        guard let (kind, blockID) = Self.parse(activity) else { return }
+        if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
+        guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         if kind == .lock { UsageMonitoring.reconcileLockout(blockID: blockID) }
         if kind == .breakWindow { BreakMonitoring.finishIfExpired(blockID: blockID) }
     }
@@ -148,8 +148,41 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         } else if uuidPart.hasSuffix(".late") {
             uuidPart = uuidPart.dropLast(".late".count)
         }
-        if kind == .usage { uuidPart = uuidPart.split(separator: ".").first ?? uuidPart }
+        uuidPart = uuidPart.split(separator: ".").first ?? uuidPart
         guard let id = UUID(uuidString: String(uuidPart)) else { return nil }
         return (kind, id)
+    }
+
+    private static func accept(_ activity: DeviceActivityName, kind: ActivityKind, id: UUID) -> Bool {
+        let namespace: String
+        let context: String?
+        switch kind {
+        case .schedule:
+            namespace = "block.\(id.uuidString)"
+            context = BlockResolution.loadBlock(id: id)?.schedule.map(ScheduleEnforcement.registrationContext)
+        case .lock:
+            namespace = "lock.\(id.uuidString)"
+            context = (SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as? Date).map {
+                UsageMonitoring.lockContext(blockID: id, end: $0)
+            }
+        case .breakWindow:
+            namespace = "break.\(id.uuidString)"
+            context = BreakMonitoring.breakEnd(blockID: id).map { BreakMonitoring.registrationContext(blockID: id, end: $0) }
+        case .usage:
+            // Interval callbacks never consume an allowance.
+            return true
+        }
+        var name = activity.rawValue
+        if name == namespace + ".early" || name == namespace + ".late" { name = namespace }
+        let result = MonitorRegistration.accept(name, namespace: namespace, legacyName: namespace, context: context)
+        return result == .promoted || result == .alreadyAccepted
+    }
+
+    private static func reconcileAdHoc(_ activity: DeviceActivityName) {
+        guard let session = AdHocMonitoring.session else { return }
+        let namespace = "adhoc.\(session.id.uuidString)"
+        let result = MonitorRegistration.accept(activity.rawValue, namespace: namespace, legacyName: namespace,
+                                                context: AdHocMonitoring.registrationContext(session))
+        if result == .promoted || result == .alreadyAccepted { AdHocMonitoring.reconcile() }
     }
 }

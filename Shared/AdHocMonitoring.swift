@@ -26,7 +26,12 @@ enum AdHocMonitoring {
     }
 
     static func activityName(_ id: UUID) -> DeviceActivityName {
-        DeviceActivityName(rawValue: "adhoc.\(id.uuidString)")
+        let base = "adhoc.\(id.uuidString)"
+        return DeviceActivityName(rawValue: MonitorRegistration.current(base, legacyName: base))
+    }
+
+    static func registrationContext(_ session: AdHocSession) -> String {
+        String(session.endsAt.timeIntervalSince1970.bitPattern, radix: 16)
     }
 
     static func start(group: AppGroup, minutes: Int, now: Date = Date()) throws {
@@ -46,14 +51,18 @@ enum AdHocMonitoring {
             intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: item.endsAt), repeats: false)
         // No shielding unless background expiry registration succeeds.
         try save(item)
+        let base = "adhoc.\(item.id.uuidString)"
+        guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: registrationContext(item)) else { throw SessionError.unavailable }
         do {
-            try DeviceActivityCenter().startMonitoring(activityName(item.id), during: schedule)
+            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
         } catch {
+            _ = MonitorRegistration.finish(ticket, context: registrationContext(item), succeeded: false)
             finish(id: item.id)
             throw error
         }
         // A reentrant completion or cancellation must never resurrect this owner.
         guard session?.id == item.id else { return }
+        _ = MonitorRegistration.finish(ticket, context: registrationContext(item), succeeded: true)
         BlockingActuator.apply(tokens: item.tokens, blockID: item.id)
     }
 
@@ -75,10 +84,14 @@ enum AdHocMonitoring {
                     intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
                     intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
                     repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
+                let base = "adhoc.\(item.id.uuidString)"
+                guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: registrationContext(item)) else { return }
                 do {
-                    try DeviceActivityCenter().startMonitoring(activityName(item.id), during: schedule)
+                    try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+                    _ = MonitorRegistration.finish(ticket, context: session?.id == item.id ? registrationContext(item) : nil, succeeded: true)
                     SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
                 } catch {
+                    _ = MonitorRegistration.finish(ticket, context: registrationContext(item), succeeded: false)
                     SharedDefaults.suite.set("Automatic end could not be restored. Open Tyri at the end of this session.",
                                              forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
                 }
@@ -106,14 +119,16 @@ enum AdHocMonitoring {
         finish(id: item.id)
     }
 
-    static func finish(id: UUID) {
+    static func finish(id: UUID, stopMonitoring: Bool = true) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
         guard session?.id == id else { return }
+        let activity = activityName(id)
+        MonitorRegistration.invalidate("adhoc.\(id.uuidString)", legacyName: "adhoc.\(id.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.adHocSession)
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: id))
-        DeviceActivityCenter().stopMonitoring([activityName(id)])
+        if stopMonitoring { DeviceActivityCenter().stopMonitoring([activity]) }
         BlockingActuator.clearShields(blockID: id)
     }
 

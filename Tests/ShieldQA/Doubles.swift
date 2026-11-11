@@ -40,7 +40,7 @@ enum BlockResolution {
  static func loadGroups()->[Int] {[]}
  static func tokens(for block:BlockRule,groups:[Int])->Tokens {selection}
 }
-enum BreakMonitoring {static func resetAllowance(blockID:UUID) {}}
+enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bool = true) {}}
 @main struct Tests {
  static func main() {
   defer {SharedDefaults.suite.removePersistentDomain(forName:SharedDefaults.name)}

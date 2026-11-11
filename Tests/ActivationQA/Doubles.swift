@@ -36,6 +36,13 @@ class Scheduling {
 }
 class Breaks {func restoreActiveBreaksIfAny(){}}
 class AdHoc {func refresh(){}}
+// This probe covers HomeView's dispatch boundary. Registration and authorization
+// are exercised by ForegroundRecoveryQA, using the production worker.
+class ForegroundRecovery {
+ static let shared=ForegroundRecovery()
+ var requests=0
+ func request(){requests+=1}
+}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"activation-tests-\(UUID())")!;enum Keys {static func running(blockID:UUID)->String{"running.\(blockID)"}}}
 enum BreakMonitoring {static func resetAllowance(blockID:UUID){}}
 enum BlockResolution {
@@ -59,14 +66,15 @@ class Probe {
   p.save()
   print("\(shieldBeforeRegistration ? "PASS" : "FAIL"): manual shield exists before potentially blocking monitor registration")
   print("\(p.screenTimeManager.shield ? "PASS" : "FAIL"): manual shield applied after successful save")
-  p.usageLimitManager.active=false;p.refresh()
-  print("\(p.usageLimitManager.active ? "PASS" : "FAIL"): foreground repairs a lost usage monitor")
+  p.usageLimitManager.active=false
+  let requests=ForegroundRecovery.shared.requests;p.refresh()
+  print("\(ForegroundRecovery.shared.requests==requests+1 && !p.usageLimitManager.active ? "PASS" : "FAIL"): foreground queues recovery without synchronous monitor registration")
   let denied=Probe();denied.screenTimeManager.authorizationStatus = .denied;denied.save()
   print("\(!denied.screenTimeManager.shield && denied.validationError != nil ? "PASS" : "FAIL"): Block now rejects missing authorization explicitly")
   let empty=Probe();BlockResolution.empty=true;empty.save();BlockResolution.empty=false
   print("\(!empty.screenTimeManager.shield && empty.validationError != nil ? "PASS" : "FAIL"): Block now rejects empty targets explicitly")
   let revoked=Probe();revoked.screenTime.authorizationStatus = .denied;revoked.usage.active=false;revoked.refresh()
-  print("\(revoked.usage.starts==0 ? "PASS" : "FAIL"): foreground does not register without authorization")
+  print("\(revoked.usage.starts==0 ? "PASS" : "FAIL"): foreground never registers synchronously when authorization is revoked")
   let starts=p.usageLimitManager.starts;p.refresh()
   print("\(starts==p.usageLimitManager.starts ? "PASS" : "FAIL"): foreground preserves a healthy monitor")
  }

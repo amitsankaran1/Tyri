@@ -84,6 +84,12 @@ enum TestHarness {
                 // Empty-token fixture tests presentation only, not effective shielding.
                 let item = AdHocSession(group: social, startedAt: Date(), endsAt: Date().addingTimeInterval(1800))
                 try? AdHocMonitoring.save(item)
+                if scenario == "adhoc-error" {
+                    SharedDefaults.suite.set(
+                        "This block has no apps or websites to block. Check its lists.",
+                        forKey: SharedDefaults.Keys.shieldError(blockID: item.id)
+                    )
+                }
                 AdHocManager.shared.refresh()
             }
             return

@@ -16,7 +16,10 @@ import DeviceActivity
 enum Migration {
 
     static func runIfNeeded() {
-        guard let transition = EnforcementTransaction.begin() else { return }
+        // The common (already migrated) launch path is a read only check. It
+        // must not wait on a foreground worker's interprocess lease.
+        guard !SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
+        guard let transition = EnforcementTransaction.begin(wait: false) else { return }
         defer { transition.finish() }
         let suite = SharedDefaults.suite
         guard !suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
@@ -80,7 +83,7 @@ enum Migration {
 
         // Only tear down old enforcement after replacements are persisted.
         for block in BlockStore.shared.blocks where newBlocks.contains(where: { $0.id == block.id }) && block.isEnabled {
-            BlockingActuator.start(blockID: block.id, bypassWeekday: true, setRunningFlag: false)
+            BlockingActuator.start(blockID: block.id, bypassWeekday: true, setRunningFlag: false, resetBreakAllowance: false)
         }
         for preset in legacy { clearLegacy(presetID: preset.id) }
         ManagedSettingsStore().clearAllSettings()
@@ -150,7 +153,7 @@ enum Migration {
         let names = ["preset.\(presetID.uuidString)", "preset.\(presetID.uuidString).early",
                      "preset.\(presetID.uuidString).late", "usage.\(presetID.uuidString)",
                      "lock.\(presetID.uuidString)"].map { DeviceActivityName(rawValue: $0) }
-        DeviceActivityCenter().stopMonitoring(names)
+        ForegroundRecovery.shared.retireLegacy(names.map(\.rawValue))
     }
 
     /// Decoder for the old presets.v1 record (the BlockingPreset type is gone).

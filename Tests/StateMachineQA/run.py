@@ -1,6 +1,6 @@
 """Production lifecycle regressions; deterministic OS/store failures and interleavings."""
 from pathlib import Path
-import os, subprocess, tempfile
+import os, subprocess, tempfile, sys
 r=Path(__file__).resolve().parents[2]
 def source(f):
     return subprocess.check_output(['git','show',os.environ['QA_REVISION']+':'+f],cwd=r,text=True) if os.environ.get('QA_REVISION') else (r/f).read_text()
@@ -16,7 +16,13 @@ with tempfile.TemporaryDirectory(prefix='tyri-state-qa-') as d:
         p=d/Path(f).name;p.write_text(source(f).replace('import DeviceActivity','').replace('import FamilyControls',''));files.append(p)
     if (r/'Shared/EnforcementTransaction.swift').exists():
         files.append(r/'Shared/EnforcementTransaction.swift')
+        files.extend(r / path for path in ['Shared/MonitorLedger.swift', 'Shared/MonitorRegistration.swift'])
         # Test defaults are isolated; transaction synchronizes this same suite.
+    if sys.platform == 'linux':
+        for path in files:
+            if path.parent == d:
+                path.write_text(path.read_text().replace('import OSLog', ''))
+        files.append(r / 'Tests/Support/OSLog.swift')
     subprocess.run(['swiftc','-parse-as-library','-module-cache-path',str(d/'cache'),*map(str,files),'-o',str(d/'run')],check=True)
     result=subprocess.run([str(d/'run')],capture_output=True,text=True)
     print(result.stdout,end='');print(result.stderr,end='')

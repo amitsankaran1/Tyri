@@ -2,6 +2,10 @@ import Foundation
 import Combine
 
 struct AppGroup {}
+@MainActor final class ForegroundRecovery {
+    static let shared = ForegroundRecovery()
+    func request() { AdHocMonitoring.reconcile() }
+}
 struct AdHocSession: Equatable {
     var id = UUID()
     var endsAt = Date().addingTimeInterval(600)

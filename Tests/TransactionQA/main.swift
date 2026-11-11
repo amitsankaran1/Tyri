@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 enum SharedDefaults { static let suite = UserDefaults(suiteName: ProcessInfo.processInfo.environment["TYRI_TEST_SUITE"]!)! }
 @main struct TransactionQA {
  static func main() {

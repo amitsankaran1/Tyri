@@ -95,22 +95,22 @@ class BreakManager: ObservableObject {
     /// Resume a mid-flight break after launch, or complete one that expired while
     /// the app was closed and the extension's one-shot window didn't fire.
     func restoreActiveBreaksIfAny() {
+        ForegroundRecovery.shared.request()
+        publishPersistedState()
+    }
+
+    func publishPersistedState() {
         let now = Date()
         activeBreak = nil
         stopTickTimer()
         for block in BlockStore.shared.blocks {
             guard let endsAt = BreakMonitoring.breakEnd(blockID: block.id) else { continue }
             if endsAt > now {
-                BreakMonitoring.finishIfExpired(blockID: block.id, now: now)
-                guard BreakMonitoring.breakEnd(blockID: block.id) != nil else {
-                    lastError = "Your break ended because its automatic re-lock could not be restored. Blocking is back on."
-                    continue
-                }
                 activeBreak = ActiveBreak(blockID: block.id, endsAt: endsAt)
                 startTickTimer()
                 return
             } else {
-                BreakMonitoring.endBreak(blockID: block.id, reapply: true)
+                ForegroundRecovery.shared.request()
             }
         }
     }
@@ -139,7 +139,7 @@ class BreakManager: ObservableObject {
                 // extension's one-shot window does the same out-of-process;
                 // both paths are idempotent.
                 if active.endsAt <= Date() {
-                    self.finish(blockID: active.blockID, reapply: true)
+                    ForegroundRecovery.shared.request()
                 }
             }
         }
