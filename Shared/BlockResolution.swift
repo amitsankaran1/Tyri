@@ -19,7 +19,7 @@ import ManagedSettings
 
 enum BlockResolution {
 
-    struct Tokens {
+    struct Tokens: Codable, Equatable {
         var apps: Set<ApplicationToken>
         var categories: Set<ActivityCategoryToken>
         var webDomains: Set<WebDomainToken>

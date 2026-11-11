@@ -73,6 +73,15 @@ enum ScheduleEnforcement {
         for i in 0..<18 { DeviceActivityCenter.registered.insert(DeviceActivityName(rawValue: "other.\(i)")) }
         precondition(manager.applySchedule(for: first), "Replacement at capacity must reuse its previous owner's slot")
         precondition(DeviceActivityCenter.registered.count == 20)
+        manager.setForegroundActive(true)
+        let timer = manager.refreshTimer!
+        precondition(timer.isValid)
+        manager.setForegroundActive(false)
+        precondition(!timer.isValid && manager.refreshTimer == nil, "Background left the periodic timer active")
+        manager.setForegroundActive(true)
+        precondition(manager.refreshTimer?.isValid == true, "Foreground failed to restart periodic recovery")
+        manager.setForegroundActive(false)
+        print("PASS: actual periodic schedule timer stops on background and restarts on activation")
         print("PASS: schedule error/recovery, repeated saves and replacement at 20-activity capacity against production manager")
     }
 }

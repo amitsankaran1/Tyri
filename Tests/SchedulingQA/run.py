@@ -5,6 +5,7 @@ repo = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="tyri-schedule-errors-") as directory:
     temp = Path(directory)
     source = (repo / "Tyri/Services/SchedulingManager.swift").read_text()
+    source = source.replace("private var refreshTimer", "var refreshTimer")
     source = source.replace("import DeviceActivity", "").replace("import Combine", "")
     manager = temp / "SchedulingManager.swift"
     manager.write_text(source)

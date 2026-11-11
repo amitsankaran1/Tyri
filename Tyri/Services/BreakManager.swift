@@ -24,6 +24,7 @@ class BreakManager: ObservableObject {
     @Published var lastError: String?
     @Published private(set) var activeBreak: ActiveBreak?
 
+    private var foregroundActive = true
     private var tickTimer: Timer?
     private var defaults: UserDefaults { SharedDefaults.suite }
 
@@ -117,6 +118,12 @@ class BreakManager: ObservableObject {
 
     // MARK: - Private
 
+    func setForegroundActive(_ active: Bool) {
+        foregroundActive = active
+        stopTickTimer()
+        if active { publishPersistedState() }
+    }
+
     private func finish(blockID: UUID, reapply: Bool) {
         BreakMonitoring.endBreak(blockID: blockID, reapply: reapply)
         activeBreak = nil
@@ -128,6 +135,7 @@ class BreakManager: ObservableObject {
     }
 
     private func startTickTimer() {
+        guard foregroundActive else { return }
         tickTimer?.invalidate()
         tickTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in

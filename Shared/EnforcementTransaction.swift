@@ -5,12 +5,14 @@ import Darwin
 import Glibc
 #endif
 
-/// Serializes app/extension transitions, including their shield and monitor writes.
+/// Serializes persisted app/extension state. Native shield IPC runs after unlock.
 /// An actor or NSLock alone cannot protect the other process. The recursive local
 /// mutex also prevents threads sharing one process from sharing a flock lease.
 /// No async suspension is permitted while a lease is held.
 enum EnforcementTransaction {
     private static let mutex = NSRecursiveLock()
+    private static var effectOrder: [String] = []
+    private static var effects: [String: @Sendable () -> Void] = [:]
     private static var depth = 0
     private static var descriptor: Int32 = -1
     private static var lockURL: URL? {
@@ -26,8 +28,10 @@ enum EnforcementTransaction {
 
     final class Lease {
         private var finished = false
-        func finish() {
-            guard !finished else { return }
+        @discardableResult
+        func finish(deferEffects: Bool = false) -> [@Sendable () -> Void] {
+            guard !finished else { return [] }
+            var pending: [@Sendable () -> Void] = []
             finished = true
             depth -= 1
             if depth == 0 {
@@ -37,9 +41,23 @@ enum EnforcementTransaction {
                 flock(descriptor, LOCK_UN)
                 close(descriptor)
                 descriptor = -1
+                pending = effectOrder.compactMap { effects[$0] }
+                effects.removeAll()
+                effectOrder.removeAll()
             }
             mutex.unlock()
+            if deferEffects { return pending }
+            for effect in pending { effect() }
+            return []
         }
+    }
+
+    /// Called inside a lease; nested transitions coalesce the same destination.
+    /// The outermost owner releases flock AND the local mutex before any IPC.
+    static func afterUnlock(key: String, _ effect: @escaping @Sendable () -> Void) {
+        precondition(depth > 0)
+        if effects[key] == nil { effectOrder.append(key) }
+        effects[key] = effect
     }
 
     /// Failure leaves enforcement unchanged. Never fall back to an unlocked write.

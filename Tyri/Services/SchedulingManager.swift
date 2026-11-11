@@ -159,6 +159,12 @@ class SchedulingManager: ObservableObject {
         }
     }
 
+    func setForegroundActive(_ active: Bool) {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        if active { startPeriodicRefresh() }
+    }
+
     private func startPeriodicRefresh() {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in

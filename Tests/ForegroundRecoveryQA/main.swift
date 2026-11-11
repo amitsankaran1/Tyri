@@ -2,8 +2,31 @@ import Foundation
 
 protocol ObservableObject {}
 @propertyWrapper struct Published<Value> { var wrappedValue: Value }
+@MainActor struct UIBackgroundTaskIdentifier: Hashable {
+    let rawValue: Int
+    static let invalid = Self(rawValue: -1)
+}
+@MainActor final class UIApplication {
+    enum State { case active }
+    static let shared = UIApplication()
+    var applicationState = State.active
+    var next = 0
+    var assertions: [UIBackgroundTaskIdentifier: () -> Void] = [:]
+    func beginBackgroundTask(withName: String, expirationHandler: @escaping () -> Void) -> UIBackgroundTaskIdentifier {
+        next += 1
+        let id = UIBackgroundTaskIdentifier(rawValue: next)
+        assertions[id] = expirationHandler
+        return id
+    }
+    func endBackgroundTask(_ id: UIBackgroundTaskIdentifier) { precondition(assertions.removeValue(forKey: id) != nil, "Duplicate assertion end") }
+    func expire() { for handler in Array(assertions.values) { handler() } }
+}
 enum Probe {
     static let mutex = NSLock()
+    static var outsideSchedule = false
+    private static var leases = 0
+    static func didBeginLease() { mutex.lock(); leases += 1; mutex.unlock() }
+    static var leaseCount: Int { mutex.lock(); defer { mutex.unlock() }; return leases }
     static let release = DispatchSemaphore(value: 0)
     static let releaseObservation = DispatchSemaphore(value: 0)
     private static var entered = false
@@ -82,13 +105,17 @@ extension BlockingSchedule {
 }
 @MainActor final class SchedulingManager {
     static let shared = SchedulingManager()
+    var foregroundActive = true
+    func setForegroundActive(_ active: Bool) { foregroundActive = active }
     func publishRecovery(errors: [UUID: String]) {}
 }
-@MainActor final class UsageLimitManager { static let shared = UsageLimitManager(); func refresh() {} }
+@MainActor final class UsageLimitManager { static let shared = UsageLimitManager(); func refresh() {}
+    func setForegroundActive(_ active: Bool) {} }
 @MainActor final class AdHocManager { static let shared = AdHocManager(); func publishPersistedState() {} }
 @MainActor final class BreakManager {
     static let shared = BreakManager()
     var lastError: String?
+    func setForegroundActive(_ active: Bool) {}
     var publications = 0
     func publishPersistedState() { publications += 1 }
 }
@@ -185,6 +212,43 @@ extension BlockingSchedule {
             return !recovery.isChecking
                 && DeviceActivityCenter.events[usage]?[UsageMonitoring.usageEventName]?.threshold.minute == 10
         }
+        let scheduleID = UUID()
+        BlockResolution.blocks[scheduleID] = BlockRule(id: scheduleID, type: .schedule, schedule: BlockingSchedule())
+        recovery.setActive(false)
+        BlockingActuator.pending = scheduleID
+        Probe.outsideSchedule = true
+        Probe.pauseObservation(1)
+        recovery.setActive(true)
+        try await wait { Probe.didPauseObservation }
+        precondition(!State.shields.contains(scheduleID), "Resume replayed an old schedule apply outside its window before observation")
+        Probe.releaseObservation.signal()
+        try await wait { !recovery.isChecking }
+        Probe.outsideSchedule = false
+        BlockResolution.blocks.removeValue(forKey: scheduleID)
+        print("PASS: resumed schedule state is recomputed before pending replay and stalled observation")
+        // Suspend while a native observation is stalled and a rerun is queued.
+        Probe.pauseObservation(1)
+        recovery.request()
+        try await wait { Probe.didPauseObservation }
+        recovery.request()
+        precondition(!UIApplication.shared.assertions.isEmpty, "Pass has no suspension assertion during native observation")
+        UIApplication.shared.expire()
+        let starts = DeviceActivityCenter.starts
+        let leases = Probe.leaseCount
+        precondition(!SchedulingManager.shared.foregroundActive)
+        recovery.request()
+        Probe.releaseObservation.signal()
+        for _ in 0..<20 { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(Probe.leaseCount == leases, "Expiration admitted a new lease")
+        precondition(DeviceActivityCenter.starts == starts && !recovery.isChecking,
+                     "Backgrounded recovery performed a registration or queued rerun")
+        recovery.setActive(true)
+        try await wait { !recovery.isChecking }
+        precondition(SchedulingManager.shared.foregroundActive)
+        for _ in 0..<10 { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(UIApplication.shared.assertions.isEmpty, "Background assertion leaked after completion/expiration")
+        print("PASS: background assertion expires, stops recovery and ends exactly once")
+        print("PASS: background cancels pending recovery/rerun and activation resumes")
         print("PASS: request during final observation queues a fresh usage-limit registration")
         print("PASS: break expiry re-shields BEFORE stalled IPC returns and retains its used allowance")
         print("PASS: migration retries after lease contention exactly once without blocking MainActor")
