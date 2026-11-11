@@ -395,9 +395,6 @@ struct BlockEditorView: View {
 
         let prevType = block.type
         let prevSchedule = block.schedule
-        let prevLimit = block.usageLimitMinutes
-        let prevLock = block.usageLockMinutes
-        let prevGroupIDs = Set(block.appGroupIDs)
 
         block.name = name.isEmpty ? "Untitled" : name
         block.type = type
@@ -441,16 +438,19 @@ struct BlockEditorView: View {
             usageLimitManager.removeUsageLimit(for: block)
         }
         let scheduleChanged = prevType != type || prevSchedule != block.schedule
-        let limitsChanged = prevType != type
-            || prevLimit != block.usageLimitMinutes
-            || prevLock != block.usageLockMinutes
-            || prevGroupIDs != Set(block.appGroupIDs)
+        // ForegroundRecovery compares the persisted registration context and
+        // replaces only monitors whose limit or selected lists changed.
         switch type {
         case .schedule:
             if scheduleChanged || !wasActive || schedulingManager.registrationErrors[block.id] != nil {
                 schedulingManager.applySchedule(for: block)
             }
-        case .timer:    usageLimitManager.applyUsageLimit(for: block, forceReset: limitsChanged)
+        case .timer:
+            // DeviceActivityCenter calls may stall for seconds. Never perform
+            // native monitor registration inside the Save button's MainActor
+            // transaction. Queue the existing recovery worker after the current
+            // synchronous Save/lease has finished.
+            Task { @MainActor in ForegroundRecovery.shared.request() }
         case .tag:      break
         }
 
