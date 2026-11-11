@@ -41,7 +41,8 @@ class AdHoc {func refresh(){}}
 class ForegroundRecovery {
  static let shared=ForegroundRecovery()
  var requests=0
- func request(){requests+=1}
+ var onRequest:(()->Void)?
+ func request(){requests+=1;onRequest?()}
 }
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"activation-tests-\(UUID())")!;enum Keys {static func running(blockID:UUID)->String{"running.\(blockID)"}}}
 enum BreakMonitoring {static func resetAllowance(blockID:UUID){}}
@@ -60,12 +61,36 @@ class Probe {
  func finish(){finished=true}
 }
 @main struct Tests {
- static func main(){
-  let p=Probe();var shieldBeforeRegistration=false
-  p.usageLimitManager.onRegister={shieldBeforeRegistration=p.screenTimeManager.shield}
-  p.save()
-  print("\(shieldBeforeRegistration ? "PASS" : "FAIL"): manual shield exists before potentially blocking monitor registration")
+ @MainActor static func main() async {
+  let p=Probe();var synchronousRegistrations=0;var readyAtRecovery=false
+  p.usageLimitManager.onRegister={synchronousRegistrations+=1}
+  let beforeSave=ForegroundRecovery.shared.requests
+  await withCheckedContinuation { (done:CheckedContinuation<Void,Never>) in
+   ForegroundRecovery.shared.onRequest={
+    readyAtRecovery=p.screenTimeManager.shield && p.finished && p.blockStore.value.isEnabled
+    done.resume()
+   }
+   p.save()
+   print("\(synchronousRegistrations==0 && ForegroundRecovery.shared.requests==beforeSave && p.finished ? "PASS" : "FAIL"): Save returns without synchronous monitor registration")
+  }
+  print("\(ForegroundRecovery.shared.requests==beforeSave+1 && readyAtRecovery ? "PASS" : "FAIL"): deferred recovery observes the persisted block and manual shield after Save returns")
+  ForegroundRecovery.shared.onRequest=nil
   print("\(p.screenTimeManager.shield ? "PASS" : "FAIL"): manual shield applied after successful save")
+  let edited=Probe();edited.isEnabled=false
+  edited.blockStore.value.usageLimitMinutes=15;edited.usageLimitMinutes=10
+  var editedRegisters=0;var savedEditAtRecovery=false
+  edited.usageLimitManager.onRegister={editedRegisters+=1}
+  let beforeEdit=ForegroundRecovery.shared.requests
+  await withCheckedContinuation { (done:CheckedContinuation<Void,Never>) in
+   ForegroundRecovery.shared.onRequest={
+    savedEditAtRecovery=edited.finished && edited.blockStore.value.usageLimitMinutes==10
+    done.resume()
+   }
+   edited.save()
+   print("\(edited.finished && editedRegisters==0 && edited.blockStore.value.usageLimitMinutes==10 && ForegroundRecovery.shared.requests==beforeEdit ? "PASS" : "FAIL"): editing a limit from 15 to 10 persists and returns before monitor work")
+  }
+  print("\(ForegroundRecovery.shared.requests==beforeEdit+1 && savedEditAtRecovery ? "PASS" : "FAIL"): edited limit queues recovery after persistence")
+  ForegroundRecovery.shared.onRequest=nil
   p.usageLimitManager.active=false
   let requests=ForegroundRecovery.shared.requests;p.refresh()
   print("\(ForegroundRecovery.shared.requests==requests+1 && !p.usageLimitManager.active ? "PASS" : "FAIL"): foreground queues recovery without synchronous monitor registration")

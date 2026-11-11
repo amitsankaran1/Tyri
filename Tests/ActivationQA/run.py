@@ -11,7 +11,7 @@ def method(s,name):
 with tempfile.TemporaryDirectory(prefix='tyri-activation-qa-') as d:
  d=Path(d);p=d/'ProductionMethods.swift'
  p.write_text('extension Probe {\n'+method(source('Tyri/Views/BlockEditorView.swift'),'save')+'\n'+method(source('Tyri/Views/HomeView.swift'),'refresh')+'\n}')
- subprocess.run(['swiftc','-module-cache-path',str(d/'cache'),str(Path(__file__).with_name('Doubles.swift')),str(p),*([str(repo/'Shared/EnforcementTransaction.swift')] if not os.environ.get('QA_REVISION') else []),'-o',str(d/'run')],check=True)
- result=subprocess.run([str(d/'run')],capture_output=True,text=True,check=True)
+ subprocess.run(['swiftc','-parse-as-library','-module-cache-path',str(d/'cache'),str(Path(__file__).with_name('Doubles.swift')),str(p),*([str(repo/'Shared/EnforcementTransaction.swift')] if not os.environ.get('QA_REVISION') else []),'-o',str(d/'run')],check=True)
+ result=subprocess.run([str(d/'run')],capture_output=True,text=True,check=True,timeout=25)
  print(result.stdout,end="")
  if "FAIL:" in result.stdout: raise SystemExit(1)
