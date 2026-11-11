@@ -33,6 +33,29 @@ import Foundation
   let generation=UsageMonitoring.usageActivityName(for:id)
   UsageMonitoring.reconcileLockout(blockID:id,now:now)
   check(generation == UsageMonitoring.usageActivityName(for:id),"SM-01 duplicate expiry preserves allowance generation")
+  // An old expiry effect must not rearm across a newer lock started during
+  // native teardown, even though the prior allowance is absent in the OS.
+  let raced = UUID(); BlockResolution.blocks[raced] = BlockRule(id:raced)
+  UsageMonitoring.startUsageMonitor(forBlockID:raced)
+  UsageMonitoring.startLockout(blockID:raced,minutes:1)
+  let expired = SharedDefaults.suite.object(forKey:SharedDefaults.Keys.usageLockEnd(blockID:raced)) as! Date
+  SharedDefaults.suite.set(now.addingTimeInterval(-1),forKey:SharedDefaults.Keys.usageLockEnd(blockID:raced))
+  DeviceActivityCenter.onStop = { UsageMonitoring.startLockout(blockID:raced,minutes:30) }
+  let beforeGeneration = SharedDefaults.suite.string(forKey:SharedDefaults.Keys.usageGeneration(blockID:raced))
+  UsageMonitoring.reconcileLockout(blockID:raced,now:now)
+  check(SharedDefaults.suite.string(forKey:SharedDefaults.Keys.usageGeneration(blockID:raced)) == beforeGeneration,
+        "old expiry cannot remint allowance during a newer lock")
+  check(!UsageMonitoring.startUsageMonitor(forBlockID:raced), "direct rearm rejects persisted lock ownership")
+  _ = expired
+  // A queued repair must not resurrect a temporary session that is removed by
+  // a synchronous/reentrant native callback during the observation.
+  try AdHocMonitoring.start(group:AppGroup(),minutes:30,now:now)
+  let removed = AdHocMonitoring.session!
+  DeviceActivityCenter().stopMonitoring([AdHocMonitoring.activityName(removed.id)])
+  DeviceActivityCenter.onStart = { AdHocMonitoring.finish(id:removed.id) }
+  AdHocMonitoring.reconcile(now:now)
+  check(AdHocMonitoring.session == nil && !State.shields.contains(removed.id),
+        "late temporary repair cannot restore a deleted owner's shield")
   // Retrying a break request cannot extend the one-break-per-activation allowance.
   let tag=UUID();BlockResolution.blocks[tag]=BlockRule(id:tag,type:.tag,isEnabled:true)
   _ = BreakMonitoring.startBreak(blockID:tag,minutes:5)

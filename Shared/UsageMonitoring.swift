@@ -128,7 +128,8 @@ enum UsageMonitoring {
         guard let transition = EnforcementTransaction.begin() else { return false }
         defer { transition.finish() }
 
-        guard let event = usageEvent(for: block, groups: groups) else { return false }
+        guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) == nil,
+              let event = usageEvent(for: block, groups: groups) else { return false }
         guard let context = registrationContext(for: block, groups: groups) else { return false }
         let previous = MonitorRegistration.load("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context)
         let oldNames = [previous?.confirmed?.name, previous?.pending?.name].compactMap { $0 }
@@ -159,7 +160,7 @@ enum UsageMonitoring {
                     reportsProgress = false
                 }
                 guard let commit = EnforcementTransaction.beginEffect() else { return }
-                let accepted = finishRegistration(ticket, context: BlockResolution.loadBlock(id: block.id).flatMap { registrationContext(for: $0, groups: BlockResolution.loadGroups()) }, succeeded: true)
+                let accepted = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: true)
                 guard accepted == .promoted || accepted == .alreadyAccepted else { commit.finish(); center.stopMonitoring([activity]); return }
                 if !reportsProgress && accepted == .promoted { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
                 EnforcementDiagnostics.record("registration", blockID: block.id, detail: "Registered allowance; progress events: \(reportsProgress)")
@@ -171,7 +172,8 @@ enum UsageMonitoring {
             } catch {
                 guard let commit = EnforcementTransaction.beginEffect() else { return }
                 defer { commit.finish() }
-                _ = finishRegistration(ticket, context: BlockResolution.loadBlock(id: block.id).flatMap { registrationContext(for: $0, groups: BlockResolution.loadGroups()) }, succeeded: false)
+                let completion = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: false)
+                guard completion == .failed else { return }
                 SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",
                                          forKey: SharedDefaults.Keys.usageError(blockID: block.id))
                 EnforcementDiagnostics.record("registration", blockID: block.id, detail: "FAILED: \(error.localizedDescription)")
@@ -182,6 +184,12 @@ enum UsageMonitoring {
         }
         transition.finish()
         return result.succeeded
+    }
+
+    private static func currentUsageContext(blockID: UUID) -> String? {
+        guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) == nil,
+              let block = BlockResolution.loadBlock(id: blockID) else { return nil }
+        return registrationContext(for: block, groups: BlockResolution.loadGroups())
     }
 
     /// Convenience used by the extension, which loads from the shared store.
@@ -309,8 +317,14 @@ enum UsageMonitoring {
         } else {
             BlockingActuator.end(blockID: blockID)
         }
+        let generation = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID))
         EnforcementTransaction.afterUnlock(key: "rearm.\(blockID)") {
-            if !isUsageMonitorActive(for: blockID) { startUsageMonitor(forBlockID: blockID) }
+            guard !isUsageMonitorActive(for: blockID), let rearm = EnforcementTransaction.beginEffect() else { return }
+            defer { rearm.finish() }
+            guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) == nil,
+                  SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID)) == generation,
+                  MonitorRegistration.pending("usage.\(blockID.uuidString)") == nil else { return }
+            startUsageMonitor(forBlockID: blockID)
         }
     }
 

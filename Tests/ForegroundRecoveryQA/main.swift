@@ -272,6 +272,65 @@ extension BlockingSchedule {
             BreakMonitoring.endBreak(blockID: breakID, reapply: true)
         }
         print("PASS: break commands stay responsive, finish after Home, reject expired completion and recover pending identity")
+        let earlyBreak = UUID()
+        BlockResolution.blocks[earlyBreak] = BlockRule(id: earlyBreak, type: .tag, isEnabled: true)
+        State.shields.insert(earlyBreak)
+        Probe.prepare("break.\(earlyBreak)")
+        let earlyCommand = Task { try await recovery.command {
+            BreakMonitoring.startBreak(blockID: earlyBreak, minutes: 5)
+        } }
+        try await wait { Probe.didEnter }
+        let pendingBreak = MonitorRegistration.pending("break.\(earlyBreak)")!
+        TyriMonitorExtension().intervalDidStart(for: DeviceActivityName(rawValue: pendingBreak.name))
+        precondition(BreakMonitoring.isOnBreak(blockID: earlyBreak) && !State.shields.contains(earlyBreak),
+                     "Early native callback did not publish the accepted break")
+        Probe.release.signal()
+        let earlySucceeded = try await earlyCommand.value
+        precondition(earlySucceeded)
+        try await wait { !recovery.isChecking }
+        BreakMonitoring.endBreak(blockID: earlyBreak, reapply: true)
+        Probe.prepare("adhoc.")
+        let temporary = Task { try await recovery.command {
+            try AdHocMonitoring.start(group: AppGroup(), minutes: 30)
+        } }
+        try await wait { Probe.didEnter }
+        let session = AdHocMonitoring.session!
+        let pendingSession = MonitorRegistration.pending("adhoc.\(session.id)")!
+        TyriMonitorExtension().intervalDidStart(for: DeviceActivityName(rawValue: pendingSession.name))
+        precondition(AdHocMonitoring.session?.registered == true && State.shields.contains(session.id),
+                     "Early native callback left temporary state and protection inconsistent")
+        Probe.release.signal()
+        try await temporary.value
+        try await wait { !recovery.isChecking }
+        AdHocMonitoring.finish(id: session.id)
+        print("PASS: early break/temporary callbacks publish state while native return remains stalled")
+        // No worker is available to perform cleanup after this command.
+        // Completing the final command while inactive must close admission itself.
+        BlockStore.shared.loadError = "Unreadable fixture"
+        let gateID = UUID()
+        BlockResolution.blocks[gateID] = BlockRule(id: gateID, type: .tag, isEnabled: true)
+        Probe.prepare("break.\(gateID)")
+        let gateCommand = Task { try await recovery.command {
+            BreakMonitoring.startBreak(blockID: gateID, minutes: 5)
+        } }
+        try await wait { Probe.didEnter }
+        recovery.setActive(false)
+        Probe.release.signal()
+        _ = try await gateCommand.value
+        precondition(!EnforcementTransaction.effectsAreEnabled,
+                     "Final background command left effect admission enabled without a recovery worker")
+        BlockStore.shared.loadError = nil
+        recovery.setActive(true)
+        try await wait { !recovery.isChecking }
+        BreakMonitoring.endBreak(blockID: gateID, reapply: true)
+        let abandoned = UUID()
+        BlockResolution.blocks[abandoned] = BlockRule(id: abandoned, type: .tag, isEnabled: true)
+        SharedDefaults.suite.set(QAClock.now.addingTimeInterval(-1), forKey: "breakPendingEnd.\(abandoned)")
+        recovery.request()
+        try await wait { !recovery.isChecking }
+        precondition(BreakMonitoring.pendingEnd(blockID: abandoned) == nil,
+                     "Expired pending break permanently prevented another request")
+        print("PASS: inactive command closes its own effect gate; expired pending breaks are retired")
         let orphan = UUID()
         BlockResolution.blocks[orphan] = BlockRule(id: orphan, type: .tag)
         State.shields.insert(orphan)

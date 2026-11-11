@@ -20,11 +20,15 @@ with tempfile.TemporaryDirectory(prefix="tyri-native-boundary-") as directory:
 ''')
     for body in ["State.shield = true; State.shields.insert(blockID)", "State.shield = false; State.shields.remove(blockID)"]:
         base = base.replace("{ " + body + " }", "{ effect(blockID) { " + body + " } }")
+    base = base.replace("  monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: firstCycle)",
+                        "  NativeProbe.expectedProtected = id\n  monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: firstCycle)\n  NativeProbe.expectedProtected = nil")
     base += '''
 enum NativeProbe {
  static var calls = 0
+ static var expectedProtected: UUID?
  static func check() {
   calls += 1
+  if let id = expectedProtected { precondition(State.shields.contains(id), "Threshold shield waited for monitor IPC") }
   let path = NSTemporaryDirectory() + "tyri-enforcement-tests-\\(ProcessInfo.processInfo.processIdentifier).lock"
   let fd = open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
   precondition(fd >= 0)

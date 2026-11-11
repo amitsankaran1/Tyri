@@ -37,12 +37,18 @@ enum BreakMonitoring {
 
     @discardableResult
     static func finishRegistration(_ ticket: MonitorReservation, blockID: UUID, end: Date, succeeded: Bool) -> MonitorLedger.Completion {
+        let block = BlockResolution.loadBlock(id: blockID)
+        if let block, block.type == .schedule { ScheduleEnforcement.reconcile(block: block) }
         let currentEnd = breakEnd(blockID: blockID) ?? pendingEnd(blockID: blockID)
-        let context = currentEnd.map { registrationContext(blockID: blockID, end: $0) }
-        let result = MonitorRegistration.finish(ticket, context: context, succeeded: succeeded)
+        let eligible = block.map { $0.type != .timer && ($0.isEnabled || SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID))) } ?? false
+        let context = eligible ? currentEnd.map { registrationContext(blockID: blockID, end: $0) } : nil
+        let pendingContext = SharedDefaults.suite.string(forKey: "breakPendingContext.\(blockID)")
+        let validContext = pendingEnd(blockID: blockID) == nil || pendingContext == context ? context : nil
+        let result = MonitorRegistration.finish(ticket, context: validContext, succeeded: succeeded)
         if currentEnd == end, pendingEnd(blockID: blockID) != nil {
             if result == .promoted || result == .alreadyAccepted {
                 SharedDefaults.suite.removeObject(forKey: "breakPendingEnd.\(blockID)")
+                SharedDefaults.suite.removeObject(forKey: "breakPendingContext.\(blockID)")
                 if end > Date(), let block = BlockResolution.loadBlock(id: blockID),
                    block.isEnabled || SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID)) {
                     SharedDefaults.suite.set(end, forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
@@ -51,6 +57,7 @@ enum BreakMonitoring {
                 }
             } else if result == .failed || result == .obsolete {
                 SharedDefaults.suite.removeObject(forKey: "breakPendingEnd.\(blockID)")
+                SharedDefaults.suite.removeObject(forKey: "breakPendingContext.\(blockID)")
             }
         }
         return result
@@ -99,6 +106,7 @@ enum BreakMonitoring {
         let base = "break.\(blockID.uuidString)"
         let context = registrationContext(blockID: blockID, end: end)
         guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { return false }
+        SharedDefaults.suite.set(context, forKey: "breakPendingContext.\(blockID)")
         SharedDefaults.suite.set(end, forKey: "breakPendingEnd.\(blockID)")
         let result = MonitorResult()
         EnforcementTransaction.afterUnlock(key: ticket.name) {
@@ -172,6 +180,7 @@ enum BreakMonitoring {
         MonitorRegistration.invalidate("break.\(blockID.uuidString)", legacyName: "break.\(blockID.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
         SharedDefaults.suite.removeObject(forKey: "breakPendingEnd.\(blockID)")
+        SharedDefaults.suite.removeObject(forKey: "breakPendingContext.\(blockID)")
         if stopMonitoring {
             EnforcementTransaction.afterUnlock(key: "stop." + activity.rawValue) {
                 DeviceActivityCenter().stopMonitoring([activity])

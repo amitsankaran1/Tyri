@@ -128,8 +128,6 @@ enum AdHocMonitoring {
                                                  forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
                     }
                 }
-                guard session?.id == item.id else { return }
-                BlockingActuator.apply(tokens: item.tokens, blockID: item.id)
             }
         }
     }

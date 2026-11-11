@@ -174,6 +174,12 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         var name = activity.rawValue
         if name == namespace + ".early" || name == namespace + ".late" { name = namespace }
         let result = MonitorRegistration.accept(name, namespace: namespace, legacyName: namespace, context: context)
+        if kind == .breakWindow, result == .promoted || result == .alreadyAccepted,
+           let end = BreakMonitoring.breakEnd(blockID: id) ?? BreakMonitoring.pendingEnd(blockID: id),
+           let owner = MonitorRegistration.load(namespace, legacyName: nil, context: "")?.confirmed {
+            _ = BreakMonitoring.finishRegistration(MonitorReservation(namespace: namespace, owner: owner),
+                                                   blockID: id, end: end, succeeded: true)
+        }
         return result == .promoted || result == .alreadyAccepted
     }
 
@@ -182,6 +188,10 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         let namespace = "adhoc.\(session.id.uuidString)"
         let result = MonitorRegistration.accept(activity.rawValue, namespace: namespace, legacyName: namespace,
                                                 context: AdHocMonitoring.registrationContext(session))
-        if result == .promoted || result == .alreadyAccepted { AdHocMonitoring.reconcile() }
+        if result == .promoted || result == .alreadyAccepted,
+           let owner = MonitorRegistration.load(namespace, legacyName: nil, context: "")?.confirmed {
+            _ = AdHocMonitoring.finishRegistration(MonitorReservation(namespace: namespace, owner: owner), succeeded: true)
+            AdHocMonitoring.reconcile()
+        }
     }
 }

@@ -72,6 +72,10 @@ final class ForegroundRecovery: ObservableObject {
             commands.remove(commandID)
             end()
             if active { request() }
+            else if !canRun {
+                BlockingActuator.setEffectsEnabled(false)
+                EnforcementTransaction.setEffectsEnabled(false)
+            }
         }
         return try await Task.detached {
             guard EnforcementTransaction.effectsAreEnabled else { throw CancellationError() }
@@ -415,6 +419,10 @@ final class ForegroundRecovery: ObservableObject {
                 } else {
                     BlockingActuator.end(blockID: block.id, stopMonitoring: false)
                 }
+                changed = true
+            }
+            if let end = BreakMonitoring.pendingEnd(blockID: block.id), end <= now {
+                BreakMonitoring.endBreak(blockID: block.id, reapply: true, stopMonitoring: false)
                 changed = true
             }
             if let end = BreakMonitoring.breakEnd(blockID: block.id), end <= now {
