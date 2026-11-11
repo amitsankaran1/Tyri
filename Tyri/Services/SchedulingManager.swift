@@ -18,7 +18,6 @@ class SchedulingManager: ObservableObject {
     @Published private(set) var activeScheduledBlockIDs: Set<UUID> = []
     @Published private(set) var registrationErrors: [UUID: String] = [:]
 
-    private let center = DeviceActivityCenter()
     private var refreshTimer: Timer?
 
     private init() {
@@ -44,61 +43,13 @@ class SchedulingManager: ObservableObject {
     /// No-op (after teardown) when the block isn't a `.schedule` type or has no schedule.
     @discardableResult
     func applySchedule(for block: BlockRule) -> Bool {
-        guard let transition = EnforcementTransaction.begin() else { return false }
-        defer { transition.finish() }
-
-        defer { ScheduleEnforcement.reconcile(block: block) }
-        // Remove old split monitors without clearing this window's state/break.
-        center.stopMonitoring([
-            Self.activityName(for: block.id, segment: .early),
-            Self.activityName(for: block.id, segment: .late)
-        ])
-
-        guard block.type == .schedule, let schedule = block.schedule else {
-            removeSchedule(for: block)
-            return true
-        }
-
-        let base = "block.\(block.id.uuidString)"
-        let context = ScheduleEnforcement.registrationContext(schedule)
-        guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { return false }
-        let obsolete = MonitorRegistration.retirementNames(observed: Set(center.activities.map(\.rawValue)))
-        if !obsolete.isEmpty {
-            center.stopMonitoring(obsolete.map { DeviceActivityName(rawValue: $0) })
-            MonitorRegistration.acknowledgeRetired(obsolete)
-        }
-        if center.activities.count >= 20 {
-            // A replacement needs a slot too. Retire only this schedule's
-            // previous owner, matching the existing replacement-at-capacity rule.
-            let previous = Self.activityName(for: block.id)
-            center.stopMonitoring([previous])
-        }
-        do {
-            try center.startMonitoring(DeviceActivityName(rawValue: ticket.name),
-                                       during: schedule.deviceActivitySchedule())
-            _ = MonitorRegistration.finish(ticket, context: context, succeeded: true)
-            let retired = MonitorRegistration.retirementNames(observed: Set(center.activities.map(\.rawValue)))
-            center.stopMonitoring(retired.map { DeviceActivityName(rawValue: $0) })
-            MonitorRegistration.acknowledgeRetired(retired)
-            registrationErrors.removeValue(forKey: block.id)
-            #if DEBUG
-            DebugLog.shared.log(.deviceActivity, "applySchedule(\(block.name)): \(schedule.summary)")
-            #endif
-            return true
-        } catch {
-            _ = MonitorRegistration.finish(ticket, context: context, succeeded: false)
-            print("❌ startMonitoring failed for block \(block.id): \(error)")
-            registrationErrors[block.id] = "Couldn’t start this schedule. \(error.localizedDescription)"
-            #if DEBUG
-            DebugLog.shared.log(.deviceActivity, "applySchedule(\(block.name)) FAILED: \(error.localizedDescription)")
-            #endif
-            return false
-        }
+        ForegroundRecovery.shared.requestAccepted()
+        return true // accepted; current registration/error is published by recovery
     }
 
     func removeSchedule(for block: BlockRule) {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         registrationErrors.removeValue(forKey: block.id)
         let names = [
@@ -107,7 +58,9 @@ class SchedulingManager: ObservableObject {
             Self.activityName(for: block.id, segment: .late)
         ]
         MonitorRegistration.invalidate("block.\(block.id.uuidString)", legacyName: "block.\(block.id.uuidString)")
-        center.stopMonitoring(names)
+        EnforcementTransaction.afterUnlock(key: "removeSchedule.\(block.id)") {
+            DeviceActivityCenter().stopMonitoring(names)
+        }
         // Also clear the running flag — if the schedule is removed mid-window,
         // the extension won't fire intervalDidEnd, so we must clean up.
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: block.id))
@@ -129,12 +82,7 @@ class SchedulingManager: ObservableObject {
 
     /// Foreground repair preserves healthy registrations and their current windows.
     func repairMissingSchedules() {
-        for block in BlockStore.shared.blocks where block.type == .schedule && block.schedule != nil {
-            if !center.activities.contains(Self.activityName(for: block.id)) || registrationErrors[block.id] != nil {
-                applySchedule(for: block)
-            }
-        }
-        refresh()
+        ForegroundRecovery.shared.request()
     }
 
     /// Repair missing/delayed callbacks before publishing current schedule state.

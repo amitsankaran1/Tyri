@@ -90,3 +90,10 @@ enum MonitorRegistration {
         }
     }
 }
+
+/// Post-transaction effects use immutable reservation identity. Native calls may
+/// stall or deliver callbacks reentrantly; completion always reloads ownership.
+final class MonitorResult: @unchecked Sendable {
+    var succeeded = false
+    var error: Error?
+}

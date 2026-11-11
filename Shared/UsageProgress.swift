@@ -20,7 +20,7 @@ struct UsageProgress: Codable {
         guard let data = suite.data(forKey: key(blockID)),
               let value = try? JSONDecoder().decode(Self.self, from: data),
               value.generation == suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID)) else { return nil }
-        return Calendar.current.isDate(value.day, inSameDayAs: now) ? value.minutes : 0
+        return Calendar.current.isDate(value.day, inSameDayAs: now) ? value.minutes : nil
     }
     static func record(_ minutes: Int, blockID: UUID, reset: Bool = false, now: Date = Date()) {
         guard let generation = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID)) else { return }

@@ -10,6 +10,24 @@ import Glibc
 /// mutex also prevents threads sharing one process from sharing a flock lease.
 /// No async suspension is permitted while a lease is held.
 enum EnforcementTransaction {
+    private static let admission = NSLock()
+    private static var enabled = true
+    static var effectsAreEnabled: Bool {
+        admission.lock(); defer { admission.unlock() }; return enabled
+    }
+    static func setEffectsEnabled(_ value: Bool) {
+        admission.lock(); enabled = value; admission.unlock()
+    }
+    static func beginEffect() -> Lease? {
+        while true {
+            admission.lock()
+            guard enabled else { admission.unlock(); return nil }
+            let lease = begin(wait: false)
+            admission.unlock()
+            if let lease { return lease }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+    }
     private static let mutex = NSRecursiveLock()
     private static var effectOrder: [String] = []
     private static var effects: [String: @Sendable () -> Void] = [:]
@@ -41,13 +59,15 @@ enum EnforcementTransaction {
                 flock(descriptor, LOCK_UN)
                 close(descriptor)
                 descriptor = -1
-                pending = effectOrder.compactMap { effects[$0] }
+                let ordered = effectOrder.filter { $0.hasPrefix("shieldIntent.") }
+                    + effectOrder.filter { !$0.hasPrefix("shieldIntent.") }
+                pending = ordered.compactMap { effects[$0] }
                 effects.removeAll()
                 effectOrder.removeAll()
             }
             mutex.unlock()
             if deferEffects { return pending }
-            for effect in pending { effect() }
+            for effect in pending where effectsAreEnabled { effect() }
             return []
         }
     }

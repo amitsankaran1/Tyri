@@ -87,11 +87,10 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         log.notice("Threshold \(activity.rawValue, privacy: .public), event \(event.rawValue, privacy: .public)")
         guard let (kind, blockID) = Self.parse(activity), kind == .usage else { return }
 
-        EnforcementDiagnostics.record("threshold", blockID: blockID, detail: "Received \(event.rawValue); current generation match: \(activity == UsageMonitoring.usageActivityName(for: blockID)); monitor registered: \(DeviceActivityCenter().activities.contains(activity))")
+        EnforcementDiagnostics.record("threshold", blockID: blockID, detail: "Received \(event.rawValue); current generation match: \(activity == UsageMonitoring.usageActivityName(for: blockID))")
 
         // Shield immediately, then register the timed lockout so it auto-releases.
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
-              DeviceActivityCenter().activities.contains(activity),
               UsageMonitoring.acceptRegistration(activity.rawValue, for: block, groups: BlockResolution.loadGroups()),
               (block.usageLimitMinutes ?? 0) > 0 else { return }
         if event.rawValue.hasPrefix("progress."),
@@ -167,7 +166,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
             }
         case .breakWindow:
             namespace = "break.\(id.uuidString)"
-            context = BreakMonitoring.breakEnd(blockID: id).map { BreakMonitoring.registrationContext(blockID: id, end: $0) }
+            context = (BreakMonitoring.breakEnd(blockID: id) ?? BreakMonitoring.pendingEnd(blockID: id)).map { BreakMonitoring.registrationContext(blockID: id, end: $0) }
         case .usage:
             // Interval callbacks never consume an allowance.
             return true

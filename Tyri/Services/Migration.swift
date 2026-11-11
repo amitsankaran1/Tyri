@@ -20,7 +20,7 @@ enum Migration {
         // must not wait on a foreground worker's interprocess lease.
         guard !SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
         guard let transition = EnforcementTransaction.begin(wait: false) else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
         let suite = SharedDefaults.suite
         guard !suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
 

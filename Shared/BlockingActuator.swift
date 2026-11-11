@@ -11,6 +11,11 @@
 //
 
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 import ManagedSettings
 import FamilyControls
 
@@ -26,6 +31,16 @@ enum BlockingActuator {
         // still able to land. Orphaned operations deliberately keep recovery
         // retryable after a process dies; safety takes priority over caching.
         var inFlight: Set<UUID> = []
+        var processOwners: [String: Int32]? = nil
+
+        mutating func retireDeadWriters() {
+            for operation in inFlight {
+                guard let pid = processOwners?[operation.uuidString], kill(pid, 0) == -1, errno == ESRCH else { continue }
+                inFlight.remove(operation)
+                processOwners?.removeValue(forKey: operation.uuidString)
+                applied = false
+            }
+        }
     }
     private static let lifecycleMutex = NSLock()
     private static var effectsEnabled = true
@@ -80,7 +95,7 @@ enum BlockingActuator {
                 SharedDefaults.suite.integer(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID)),
                 tokens.map { max(1, ($0.apps.count + 49) / 50, ($0.webDomains.count + 49) / 50) } ?? 1)
             saveIntent(Intent(tokens: tokens, includeCategories: includeCategories,
-                              chunks: min(maxChunksPerBlock, count), inFlight: old?.inFlight ?? []), blockID)
+                              chunks: min(maxChunksPerBlock, count), inFlight: old?.inFlight ?? [], processOwners: old?.processOwners), blockID)
         }
         EnforcementTransaction.afterUnlock(key: intentKey(blockID)) { flushIntent(blockID) }
     }
@@ -98,6 +113,7 @@ enum BlockingActuator {
         for (id, operations) in completed {
             if var intent = loadIntent(id) {
                 intent.inFlight.subtract(operations)
+                for operation in operations { intent.processOwners?.removeValue(forKey: operation.uuidString) }
                 intent.applied = false
                 saveIntent(intent, id)
             }
@@ -116,6 +132,7 @@ enum BlockingActuator {
         while canApply {
             guard let lease = effectLease() else { return }
             guard var intent = loadIntent(id) else { lease.finish(); return }
+            intent.retireDeadWriters()
             lifecycleMutex.lock()
             let epoch = activation
             let cached = verified[id]
@@ -126,6 +143,8 @@ enum BlockingActuator {
             guard canApply else { lease.finish(); return }
             let operation = UUID()
             intent.inFlight.insert(operation)
+            if intent.processOwners == nil { intent.processOwners = [:] }
+            intent.processOwners?[operation.uuidString] = ProcessInfo.processInfo.processIdentifier
             intent.applied = false
             saveIntent(intent, id)
             lease.finish()
@@ -148,6 +167,8 @@ enum BlockingActuator {
             }
             guard var current = loadIntent(id) else { completion.finish(); return }
             current.inFlight.remove(operation)
+            current.processOwners?.removeValue(forKey: operation.uuidString)
+            current.retireDeadWriters()
             guard current.revision == intent.revision else {
                 current.applied = false
                 saveIntent(current, id)
@@ -157,7 +178,11 @@ enum BlockingActuator {
             }
             current.applied = result.matched && current.inFlight.isEmpty
             current.chunks = current.inFlight.isEmpty ? result.chunks : max(current.chunks, result.chunks)
-            saveIntent(current, id)
+            if current.tokens == nil, current.applied, BlockResolution.loadBlock(id: id) == nil {
+                // No live older writer can land and this owner no longer exists.
+                // Compaction keeps recovery proportional to current rules/sessions.
+                SharedDefaults.suite.removeObject(forKey: intentKey(id))
+            } else { saveIntent(current, id) }
             if intent.tokens == nil {
                 SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: id))
             } else {

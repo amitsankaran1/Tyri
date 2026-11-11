@@ -32,7 +32,14 @@ nonisolated struct MonitorLedger: Codable, Equatable {
     /// A callback can confirm a pending registration before startMonitoring
     /// returns. A later success, failure or cancellation must respect that fact.
     mutating func complete(_ owner: Owner, context: String?, succeeded: Bool) -> Completion {
-        if confirmed == owner { return .alreadyAccepted }
+        if confirmed == owner {
+            guard context == owner.context else {
+                retired.insert(owner.name)
+                confirmed = nil
+                return .obsolete
+            }
+            return .alreadyAccepted
+        }
         guard pending == owner else { return .obsolete }
         guard context == owner.context else {
             pending = nil

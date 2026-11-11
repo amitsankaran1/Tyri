@@ -15,6 +15,8 @@ class BlockStore: ObservableObject {
 
     @Published private(set) var blocks: [BlockRule] = []
 
+    @Published private(set) var loadError: String?
+
     private let blocksKey = SharedDefaults.Keys.blocks
     private var defaults: UserDefaults { SharedDefaults.suite }
     private var saveTask: Task<Void, Never>?
@@ -42,12 +44,14 @@ class BlockStore: ObservableObject {
     }
 
     func insert(_ item: BlockRule) {
+        guard loadError == nil else { return }
         guard !blocks.contains(where: { $0.id == item.id }) else { return }
         blocks.append(item)
         flush()
     }
 
     func update(_ block: BlockRule) {
+        guard loadError == nil else { return }
         guard let idx = blocks.firstIndex(where: { $0.id == block.id }) else { return }
         if blocks[idx].isEnabled != block.isEnabled {
             defaults.set(UUID().uuidString, forKey: SharedDefaults.Keys.manualActivation(blockID: block.id))
@@ -59,6 +63,7 @@ class BlockStore: ObservableObject {
     }
 
     func delete(id: UUID) {
+        guard loadError == nil else { return }
         blocks.removeAll(where: { $0.id == id })
         save()
         defaults.removeObject(forKey: SharedDefaults.Keys.running(blockID: id))
@@ -75,6 +80,7 @@ class BlockStore: ObservableObject {
     }
 
     func setEnabled(id: UUID, enabled: Bool) {
+        guard loadError == nil else { return }
         guard var b = block(id: id) else { return }
         b.isEnabled = enabled
         update(b)
@@ -82,6 +88,7 @@ class BlockStore: ObservableObject {
 
     /// Replace the whole set (used by migration). Persists synchronously.
     func replaceAll(_ newBlocks: [BlockRule]) {
+        guard loadError == nil else { return }
         blocks = newBlocks
         flush()
     }
@@ -106,6 +113,7 @@ class BlockStore: ObservableObject {
     func reload() { load() }
 
     private func persistNow() {
+        guard loadError == nil else { return }
         do {
             let data = try JSONEncoder().encode(blocks)
             defaults.set(data, forKey: blocksKey)
@@ -115,12 +123,13 @@ class BlockStore: ObservableObject {
     }
 
     private func load() {
-        guard let data = defaults.data(forKey: blocksKey) else { blocks = []; return }
+        guard let data = defaults.data(forKey: blocksKey) else { blocks = []; loadError = nil; return }
         do {
             blocks = try JSONDecoder().decode([BlockRule].self, from: data)
+            loadError = nil
         } catch {
             print("❌ Failed to decode blocks: \(error)")
-            blocks = []
+            loadError = "Saved blocks could not be read. Your original data has been kept. Reopen Tyri to retry."
         }
     }
 }

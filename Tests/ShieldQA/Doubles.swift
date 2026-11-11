@@ -57,7 +57,8 @@ struct Schedule {var weekdays:Set<Int>=[]}
 enum BlockResolution {
  struct Tokens: Codable, Equatable {var apps:Set<Int>=[];var categories:Set<Int>=[];var webDomains:Set<Int>=[];var domains:Set<String>=[]}
  static var selection=Tokens()
- static func loadBlock(id:UUID)->BlockRule? {BlockRule(id:id)}
+ static var missing: Set<UUID> = []
+ static func loadBlock(id:UUID)->BlockRule? {missing.contains(id) ? nil : BlockRule(id:id)}
  static func loadGroups()->[Int] {[]}
  static func tokens(for block:BlockRule,groups:[Int])->Tokens {selection}
 }
@@ -65,8 +66,9 @@ enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bo
 @main struct Tests {
  static func main() {
   setbuf(stdout, nil)
-  if CommandLine.arguments.count == 3, ["replace", "clear"].contains(CommandLine.arguments[1]) {
+  if CommandLine.arguments.count == 3, ["replace", "clear", "crash"].contains(CommandLine.arguments[1]) {
    let id = UUID(uuidString:CommandLine.arguments[2])!
+   if CommandLine.arguments[1] == "crash" { NativeProbe.onWrite = { exit(0) } }
    if CommandLine.arguments[1] == "clear" { BlockingActuator.clearShields(blockID:id) }
    else { BlockingActuator.apply(tokens:.init(apps:[200]),blockID:id) }
    return
@@ -195,6 +197,24 @@ enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bo
   BlockingActuator.replayPending()
   check(ManagedSettingsStore(named:BlockingActuator.appsStoreName(for:id)).shield.applications == nil,
         "foreground replays a pending clear even when its block/session was deleted")
+  let crashedID = UUID()
+  let child = Process()
+  child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+  child.arguments = ["crash", crashedID.uuidString]
+  var environment = ProcessInfo.processInfo.environment
+  environment["TYRI_SHIELD_SUITE"] = SharedDefaults.name
+  environment["TYRI_TRANSACTION_PATH"] = environment["TYRI_TRANSACTION_PATH"] ?? NSTemporaryDirectory() + "tyri-enforcement-tests-\(ProcessInfo.processInfo.processIdentifier).lock"
+  child.environment = environment
+  try! child.run(); child.waitUntilExit()
+  precondition(child.terminationStatus == 0)
+  BlockingActuator.apply(tokens:.init(apps:[200]),blockID:crashedID)
+  let afterRepair = NativeProbe.writes
+  BlockingActuator.apply(tokens:.init(apps:[200]),blockID:crashedID)
+  check(NativeProbe.writes == afterRepair, "dead writer receipt retires and unchanged recovered shield settles")
+  BlockResolution.missing.insert(crashedID)
+  BlockingActuator.clearShields(blockID: crashedID)
+  check(SharedDefaults.suite.data(forKey: "shieldIntent.v1." + crashedID.uuidString) == nil,
+        "successful deleted-owner clear compacts tombstone after all writers finish")
   precondition(failed == 0, "Shield regressions")
   print("RESULT: \(passed) passed, \(failed) failed — production actuator with deterministic settings double")
  }

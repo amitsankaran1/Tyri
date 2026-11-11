@@ -8,9 +8,13 @@ import Foundation
         precondition(ledger.confirmed?.name == namespace, "Reservation must preserve the accepted allowance")
         precondition(ledger.acceptCallback(namespace, context: "A") == .alreadyAccepted)
         precondition(ledger.acceptCallback(first.name, context: "A") == .promoted)
-        precondition(ledger.complete(first, context: nil, succeeded: false) == .alreadyAccepted,
+        precondition(ledger.complete(first, context: "A", succeeded: false) == .alreadyAccepted,
                      "Late failure cannot undo an early callback's accepted owner")
         precondition(ledger.confirmed == first && ledger.pending == nil)
+        var changedAfterCallback = ledger
+        precondition(changedAfterCallback.complete(first, context: "B", succeeded: true) == .obsolete,
+                     "Late completion accepted an owner whose saved inputs changed after early callback")
+        precondition(changedAfterCallback.confirmed == nil)
         let b = ledger.reserve(namespace: namespace, context: "B")
         let aAgain = ledger.reserve(namespace: namespace, context: "A")
         precondition(aAgain.name != first.name && aAgain.name != b.name, "ABA must not reuse a name")

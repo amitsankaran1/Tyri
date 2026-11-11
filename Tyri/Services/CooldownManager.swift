@@ -52,7 +52,7 @@ class CooldownManager: ObservableObject {
     /// start for it — the disable path simply doesn't exist for those blocks.
     func start(for blockID: UUID, minutes: Int) {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         guard minutes >= 1, let identity = activationIdentity(blockID: blockID) else { return }
         cancel()
@@ -91,7 +91,7 @@ class CooldownManager: ObservableObject {
     /// The schedule remains registered — the next interval will re-shield.
     func complete() {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         guard let active = activeCooldown, active.endsAt <= Date() else { return }
         guard let identity = activationIdentity(blockID: active.blockID),

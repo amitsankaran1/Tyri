@@ -87,11 +87,13 @@ extension BlockingSchedule {
 }
 @MainActor final class BlockStore {
     static let shared = BlockStore()
+    var loadError: String? = nil
     func flush() {}
     func reload() {}
 }
 @MainActor final class AppGroupStore {
     static let shared = AppGroupStore()
+    var loadError: String? = nil
     func flush() {}
     func reload() {}
 }
@@ -212,6 +214,76 @@ extension BlockingSchedule {
             return !recovery.isChecking
                 && DeviceActivityCenter.events[usage]?[UsageMonitoring.usageEventName]?.threshold.minute == 10
         }
+        // A Save accepted while the final observation is stalled must finish
+        // without requiring another activation, even if Home follows immediately.
+        Probe.pauseObservation(2)
+        recovery.request()
+        try await wait { Probe.didPauseObservation }
+        BlockResolution.blocks[queued]!.usageLimitMinutes = 8
+        recovery.requestAccepted()
+        recovery.setActive(false)
+        Probe.releaseObservation.signal()
+        try await wait {
+            let usage = UsageMonitoring.usageActivityName(for: queued)
+            return !recovery.isChecking
+                && DeviceActivityCenter.events[usage]?[UsageMonitoring.usageEventName]?.threshold.minute == 8
+        }
+        precondition(UsageProgress.reported(blockID: queued) == nil,
+                     "Native registration fabricated an iOS usage report")
+        try await wait { UIApplication.shared.assertions.isEmpty }
+        recovery.setActive(true)
+        try await wait { !recovery.isChecking }
+        let retained = UsageMonitoring.usageActivityName(for: queued)
+        recovery.request()
+        try await wait { !recovery.isChecking }
+        precondition(UsageMonitoring.usageActivityName(for: queued) == retained,
+                     "Relaunch recovery reset a healthy allowance")
+        print("PASS: accepted Save completes after Home; no synthetic progress; healthy owner retained")
+        for expires in [false, true] {
+            let breakID = UUID()
+            BlockResolution.blocks[breakID] = BlockRule(id: breakID, type: .tag, isEnabled: true)
+            State.shields.insert(breakID)
+            Probe.prepare("break.\(breakID.uuidString)")
+            let command = Task { try await recovery.command {
+                BreakMonitoring.startBreak(blockID: breakID, minutes: 5)
+            } }
+            try await wait { Probe.didEnter }
+            precondition(State.shields.contains(breakID), "Break lifted before its automatic end registered")
+            let probeLease = EnforcementTransaction.begin(wait: false)
+            precondition(probeLease != nil, "Break registration retained shared lease")
+            probeLease?.finish()
+            recovery.setActive(false)
+            if expires { UIApplication.shared.expire() }
+            let leases = Probe.leaseCount
+            Probe.release.signal()
+            let completed = (try? await command.value) ?? false
+            if expires {
+                precondition(!completed && Probe.leaseCount == leases,
+                             "Expired command admitted a late state commit")
+                precondition(State.shields.contains(breakID), "Expired break lifted protection")
+            } else {
+                precondition(completed && BreakMonitoring.isOnBreak(blockID: breakID),
+                             "Accepted break did not finish after background")
+            }
+            recovery.setActive(true)
+            try await wait { !recovery.isChecking }
+            precondition(BreakMonitoring.isOnBreak(blockID: breakID),
+                         "Interrupted successful registration did not reconcile its pending command")
+            BreakMonitoring.endBreak(blockID: breakID, reapply: true)
+        }
+        print("PASS: break commands stay responsive, finish after Home, reject expired completion and recover pending identity")
+        let orphan = UUID()
+        BlockResolution.blocks[orphan] = BlockRule(id: orphan, type: .tag)
+        State.shields.insert(orphan)
+        recovery.request()
+        try await wait { !recovery.isChecking }
+        precondition(!State.shields.contains(orphan), "Inactive tag retained an old schedule shield")
+        BlockResolution.blocks[orphan]!.type = .timer
+        State.shields.insert(orphan)
+        recovery.request()
+        try await wait { !recovery.isChecking }
+        precondition(!State.shields.contains(orphan), "Inactive usage allowance retained a stale shield")
+        print("PASS: authoritative desired state clears stale shields after schedule-to-tag/timer transitions")
         let scheduleID = UUID()
         BlockResolution.blocks[scheduleID] = BlockRule(id: scheduleID, type: .schedule, schedule: BlockingSchedule())
         recovery.setActive(false)

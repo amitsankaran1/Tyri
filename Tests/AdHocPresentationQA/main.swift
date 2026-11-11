@@ -40,7 +40,7 @@ enum AdHocMonitoring {
 }
 
 @main struct Tests {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
         let manager = AdHocManager.shared
         var changes = 0
         let observation = manager.objectWillChange.sink { changes += 1 }
@@ -89,3 +89,7 @@ enum AdHocMonitoring {
         print("PASS: \(checks) production temporary-session presentation checks with OS doubles")
     }
 }
+
+@MainActor extension ForegroundRecovery { func command<T: Sendable>(_ operation: @escaping @Sendable () throws -> T) async throws -> T { try operation() } }
+
+@MainActor extension ForegroundRecovery { func finish(_ lease: EnforcementTransaction.Lease) { lease.finish() } }

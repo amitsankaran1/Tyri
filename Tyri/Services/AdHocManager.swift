@@ -5,6 +5,7 @@ import FamilyControls
 @MainActor
 final class AdHocManager: ObservableObject {
     static let shared = AdHocManager()
+    @Published private(set) var isStarting = false
     @Published private(set) var session: AdHocSession?
     @Published private(set) var enforcementError: String?
     private init() {
@@ -28,14 +29,24 @@ final class AdHocManager: ObservableObject {
         if session != latest { session = latest }
         if enforcementError != latestError { enforcementError = latestError }
     }
-    func start(group: AppGroup, minutes: Int) throws {
+    func start(group: AppGroup, minutes: Int) async throws {
+        guard !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
         guard ScreenTimeManager.shared.authorizationStatus == .approved else {
             throw NSError(domain: "Tyri", code: 1, userInfo: [NSLocalizedDescriptionKey: "Allow Screen Time access in Settings first."])
         }
         AppGroupStore.shared.flush()
-        try AdHocMonitoring.start(group: group, minutes: minutes)
+        try await ForegroundRecovery.shared.command {
+            try AdHocMonitoring.start(group: group, minutes: minutes)
+        }
         refresh()
     }
     func requestRelease() throws { try AdHocMonitoring.requestRelease(); refresh() }
-    func release() { AdHocMonitoring.release(); refresh() }
+    func release() {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { ForegroundRecovery.shared.finish(transition) }
+        AdHocMonitoring.release()
+        refresh()
+    }
 }

@@ -48,7 +48,7 @@ class NFCManager: NSObject, ObservableObject {
     /// is currently on, turn them all off; otherwise turn them all on.
     func toggleTagBlocks() {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         let tagBlocks = BlockStore.shared.blocks(ofType: .tag)
         guard !tagBlocks.isEmpty else {

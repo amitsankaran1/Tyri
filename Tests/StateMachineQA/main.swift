@@ -19,7 +19,7 @@ import Foundation
   AdHocMonitoring.finish(id:session.id)
   // OS registration may overlap cancellation/expiry in the other process.
   DeviceActivityCenter.onStart={if let item=AdHocMonitoring.session {AdHocMonitoring.finish(id:item.id)}}
-  try AdHocMonitoring.start(group:AppGroup(),minutes:30,now:now)
+  do { try AdHocMonitoring.start(group:AppGroup(),minutes:30,now:now) } catch {}
   check(AdHocMonitoring.session == nil && State.shields.isEmpty,"SM-01 cancellation during registration cannot leave orphan temporary shield")
   if let item=AdHocMonitoring.session {AdHocMonitoring.finish(id:item.id)}
   State.shields=[]

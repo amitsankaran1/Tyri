@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selection = 0
+    @StateObject private var blocks = BlockStore.shared
+    @StateObject private var lists = AppGroupStore.shared
     @StateObject private var recovery = ForegroundRecovery.shared
 
     var body: some View {
@@ -15,7 +17,10 @@ struct ContentView: View {
         }
         .tint(.blue)
         .overlay(alignment: .top) {
-            if recovery.isChecking {
+            if let error = blocks.loadError ?? lists.loadError {
+                Text(error).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("saved-data-error")
+            } else if recovery.isChecking {
                 ProgressView("Checking saved blocks…")
                     .padding()
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))

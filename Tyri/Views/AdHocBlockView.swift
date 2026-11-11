@@ -15,8 +15,13 @@ struct AdHocBlockView: View {
         Form {
             if let session = manager.session {
                 Section {
+                    if session.registered == false {
+                        ProgressView("Preparing automatic end…")
+                        Text("Blocking starts after iOS confirms the session.").foregroundStyle(.secondary)
+                    } else {
                     Label(BlockStatusPresentation.canDisplayActivity ? (manager.enforcementError == nil ? "Blocking on" : "Blocking needs attention") : "Screen Time access needed", systemImage: manager.enforcementError == nil ? "lock.fill" : "exclamationmark.circle")
                         .foregroundStyle(BlockStatusPresentation.canDisplayActivity ? Color.red : Color.secondary)
+                    }
                     Text(session.group.name).font(.headline)
                     Text("Session ends at \(session.endsAt.formatted(date: .omitted, time: .shortened))")
                     Text(session.endsAt, style: .timer).monospacedDigit()
@@ -77,12 +82,14 @@ struct AdHocBlockView: View {
                     Section { Label("Allow Screen Time access in Settings before starting.", systemImage: "hand.raised") }
                 }
                 Section {
-                    Button("Start blocking") {
+                    Button(manager.isStarting ? "Starting…" : "Start blocking") {
                         guard let groupID, let group = groups.group(id: groupID) else { return }
-                        do { try manager.start(group: group, minutes: minutes == 0 ? customMinutes : minutes); error = nil }
-                        catch { self.error = error.localizedDescription }
+                        Task {
+                            do { try await manager.start(group: group, minutes: minutes == 0 ? customMinutes : minutes); error = nil }
+                            catch { self.error = error.localizedDescription }
+                        }
                     }
-                    .disabled(groupID == nil || !BlockStatusPresentation.canDisplayActivity)
+                    .disabled(manager.isStarting || groupID == nil || !BlockStatusPresentation.canDisplayActivity)
                 } footer: {
                     Text("Starts now and ends automatically. Uses the apps and websites in this list when you start. To stop early, wait five minutes, then tap Release block.")
                 }

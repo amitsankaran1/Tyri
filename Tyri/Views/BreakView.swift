@@ -14,8 +14,13 @@ struct BreakView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "cup.and.saucer").font(.largeTitle).foregroundStyle(.tint)
                         Text(block?.name ?? "Break").font(.title2.bold())
-                        Text("This block is paused. Other active blocks still apply.").foregroundStyle(.secondary)
-                        Text(remainingTime).font(.system(.largeTitle, design: .rounded).bold()).monospacedDigit()
+                        if breakManager.isStarting {
+                            ProgressView("Preparing your break…")
+                            Text("Apps stay blocked until the automatic re-lock is ready.").foregroundStyle(.secondary)
+                        } else {
+                            Text("This block is paused. Other active blocks still apply.").foregroundStyle(.secondary)
+                            Text(remainingTime).font(.system(.largeTitle, design: .rounded).bold()).monospacedDigit()
+                        }
                     }
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(.vertical, 20)
                     .listRowBackground(Color.clear)
@@ -25,6 +30,7 @@ struct BreakView: View {
                         Label("End break and block apps", systemImage: "lock").frame(maxWidth: .infinity)
                     }
                     .primaryActionButton().listRowBackground(Color.clear)
+                    .disabled(breakManager.isStarting)
                 } footer: {
                     Text("Blocking resumes automatically when the break ends, even if Tyri is closed. Closing this screen keeps the break running.")
                 }
@@ -33,7 +39,10 @@ struct BreakView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { isPresented = false } } }
         }
         .onAppear { startIfNeeded() }
-        .onChange(of: breakManager.activeBreak) { active in if active == nil { isPresented = false } }
+        .onChange(of: breakManager.isStarting) { starting in
+            if !starting && breakManager.activeBreak?.blockID != blockID { isPresented = false }
+        }
+        .onChange(of: breakManager.activeBreak) { active in if active == nil && !breakManager.isStarting { isPresented = false } }
     }
     private var remainingTime: String {
         let seconds = max(0, Int(breakManager.remaining.rounded(.up)))
@@ -49,7 +58,7 @@ struct BreakView: View {
         }
         breakManager.start(for: block)
         // start() can no-op (e.g. rules changed underneath us) — don't show a dead sheet.
-        if breakManager.activeBreak?.blockID != blockID {
+        if !breakManager.isStarting && breakManager.activeBreak?.blockID != blockID {
             isPresented = false
         }
     }

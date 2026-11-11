@@ -38,3 +38,7 @@ enum BreakMonitoring {static func resetAllowance(blockID:UUID){}}
   if failures>0 {exit(1)}
  }
 }
+
+final class ForegroundRecovery { static let shared = ForegroundRecovery(); func request() {} }
+
+extension ForegroundRecovery { func finish(_ lease: EnforcementTransaction.Lease) { lease.finish() }; func requestAccepted() { request() } }
