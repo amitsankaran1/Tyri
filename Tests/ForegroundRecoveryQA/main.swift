@@ -5,10 +5,15 @@ protocol ObservableObject {}
 enum Probe {
     static let mutex = NSLock()
     static let release = DispatchSemaphore(value: 0)
+    static let releaseObservation = DispatchSemaphore(value: 0)
     private static var entered = false
     private static var prefix = ""
     private static var shouldFail = false
+    private static var observationCount = 0
+    private static var pauseOnObservation: Int?
+    private static var pausedObservation = false
     static var didEnter: Bool { mutex.lock(); defer { mutex.unlock() }; return entered }
+    static var didPauseObservation: Bool { mutex.lock(); defer { mutex.unlock() }; return pausedObservation }
     static func prepare(_ value: String, fail: Bool = false) {
         mutex.lock(); entered = false; prefix = value; shouldFail = fail; mutex.unlock()
     }
@@ -24,6 +29,25 @@ enum Probe {
             precondition(release.wait(timeout: .now() + 10) == .success)
         }
         if fail { throw NSError(domain: "late-registration-failure", code: 1) }
+    }
+    static func pauseObservation(_ number: Int) {
+        mutex.lock()
+        observationCount = 0
+        pauseOnObservation = number
+        pausedObservation = false
+        mutex.unlock()
+    }
+    static func afterObserve(_ names: Set<String>) -> Set<String> {
+        mutex.lock()
+        observationCount += 1
+        let pause = observationCount == pauseOnObservation
+        if pause { pausedObservation = true; pauseOnObservation = nil }
+        mutex.unlock()
+        if pause {
+            precondition(!Thread.isMainThread, "Native observation must run off main")
+            precondition(releaseObservation.wait(timeout: .now() + 10) == .success)
+        }
+        return names
     }
 }
 extension SharedDefaults.Keys { static let migratedToBlocksV2 = "migration" }
@@ -141,6 +165,27 @@ extension BlockingSchedule {
                      "Deadline crossing during IPC failed to restore protection in the same cycle")
         precondition(BreakMonitoring.breakUsed(blockID: tag), "Recovery renewed the break allowance")
         precondition(Migration.runs == 1)
+        let queued = UUID()
+        BlockResolution.blocks[queued] = BlockRule(id: queued, usageLimitMinutes: 15)
+        recovery.request()
+        try await wait { !recovery.isChecking }
+        let initialUsage = UsageMonitoring.usageActivityName(for: queued)
+        precondition(DeviceActivityCenter.events[initialUsage]?[UsageMonitoring.usageEventName]?.threshold.minute == 15)
+        // The second observation is the pass's final observation: its plan has
+        // already determined that no registration work remains. An edit now
+        // needs the queued request to trigger a new pass after this one exits.
+        Probe.pauseObservation(2)
+        recovery.request()
+        try await wait { Probe.didPauseObservation }
+        BlockResolution.blocks[queued]!.usageLimitMinutes = 10
+        recovery.request()
+        Probe.releaseObservation.signal()
+        try await wait {
+            let usage = UsageMonitoring.usageActivityName(for: queued)
+            return !recovery.isChecking
+                && DeviceActivityCenter.events[usage]?[UsageMonitoring.usageEventName]?.threshold.minute == 10
+        }
+        print("PASS: request during final observation queues a fresh usage-limit registration")
         print("PASS: break expiry re-shields BEFORE stalled IPC returns and retains its used allowance")
         print("PASS: migration retries after lease contention exactly once without blocking MainActor")
     }

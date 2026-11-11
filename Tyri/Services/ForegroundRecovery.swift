@@ -31,6 +31,10 @@ final class ForegroundRecovery: ObservableObject {
     @Published private(set) var registeredUsageIDs: Set<UUID> = []
     private var started = false
     private var running = false
+    /// Coalesces saves that arrive while native recovery IPC is in flight. The
+    /// current pass may already have performed its final observation, so it
+    /// cannot safely discover a newly persisted monitor context by itself.
+    private var rerunRequested = false
     private var legacyRetirements: Set<String> = []
     private init() {}
 
@@ -63,7 +67,10 @@ final class ForegroundRecovery: ObservableObject {
                 UsageLimitManager.shared.refresh()
             }
         }
-        guard !running else { return }
+        guard !running else {
+            rerunRequested = true
+            return
+        }
         guard ScreenTimeManager.shared.authorizationStatus == .approved else {
             isChecking = false
             return
@@ -150,6 +157,10 @@ final class ForegroundRecovery: ObservableObject {
             BreakManager.shared.publishPersistedState()
             running = false
             isChecking = false
+            if rerunRequested {
+                rerunRequested = false
+                request()
+            }
         }
     }
 
