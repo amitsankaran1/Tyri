@@ -395,9 +395,6 @@ struct BlockEditorView: View {
 
         let prevType = block.type
         let prevSchedule = block.schedule
-        let prevLimit = block.usageLimitMinutes
-        let prevLock = block.usageLockMinutes
-        let prevGroupIDs = Set(block.appGroupIDs)
 
         block.name = name.isEmpty ? "Untitled" : name
         block.type = type
