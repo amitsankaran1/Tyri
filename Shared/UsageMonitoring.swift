@@ -251,15 +251,16 @@ enum UsageMonitoring {
     }
 
     private static func registerLockout(blockID: UUID, end: Date, now: Date) {
-        let cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
         // DeviceActivity requires a minimum 15-minute interval. Short lockouts
         // use the warning callback at their real deadline, with end as a backstop.
         let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
         let monitorEnd = max(end, start.addingTimeInterval(900))
         let warning = monitorEnd.timeIntervalSince(end)
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
-            intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+            intervalStart: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
             repeats: false, warningTime: warning > 0 ? DateComponents(second: Int(ceil(warning))) : nil
         )
         let base = "lock.\(blockID.uuidString)"
@@ -325,11 +326,13 @@ enum UsageMonitoring {
         defer { lease.finish() }
         guard let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date,
               end <= now else { return }
-        let manualSnapshot = SharedDefaults.suite.bool(forKey: "usageLockManual.\(blockID)")
+        let manualSnapshot = SharedDefaults.suite.object(forKey: "usageLockManual.\(blockID)") as? Bool
         stopLockout(for: blockID, stopMonitoring: stopMonitoring)
         let block = BlockResolution.loadBlock(id: blockID)
         let manual = block?.isEnabled ?? manualSnapshot
-        if !manual { BlockingActuator.end(blockID: blockID, stopMonitoring: stopMonitoring) }
+        if manual == false { BlockingActuator.end(blockID: blockID, stopMonitoring: stopMonitoring) }
+        // Legacy locks may predate the snapshot. Unknown ownership cannot be
+        // interpreted as off: preserve the intent and keep Emergency Access available.
         else if let tokens = BlockResolution.tokens(forBlockID: blockID) {
             BlockingActuator.apply(tokens: tokens, blockID: blockID)
         }

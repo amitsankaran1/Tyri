@@ -18,7 +18,7 @@ Scope authorized by Amit: implement the concrete fixes recommended in Claude's r
 | Three editor exits | Hide the redundant system back button; retain explicit Cancel and Save | Simulator detail capture |
 | All-day schedule shows equal times | Plain “All day” summary | Schedule summary and simulator inspection |
 | Diagnostics omit recovery state | Include temporary-session, break and pending-monitor state; qualify readback without authorization or targets | Simulator diagnostics |
-| Deadline components lack time zone | Include the originating time zone for absolute one-shot deadlines | Native schedule construction and compilation |
+| Deadline components lack time zone | Use explicit UTC components (including time zone) for absolute one-shot deadlines | Native schedule construction and compilation |
 
 ## Evidence and interpretation
 
@@ -29,3 +29,7 @@ The simulator fixtures use empty picker tokens and cannot establish real Screen 
 Wall-clock changes, the existing native activity ceiling, and residual preferences IPC under the short lease remain risks from the report, not newly reproduced defects. This change does not redesign those mechanisms or claim they are solved. A clock-policy change would alter product behavior; replacing preference synchronization needs a separate measured cross-process design.
 
 Validation and independent review results will be recorded with the PR and existing Notion task after execution. No merge or TestFlight delivery is implied by this branch.
+
+Independent review identified and corrected schedule expiry with unreadable lists, legacy manual ownership without a snapshot, and deferred clear replay while data remains unreadable. A legacy lock already unreadable before its ownership can be migrated is inherently ambiguous: its timed deadline expires, but unknown manual protection remains until Emergency Access or data recovery. New locks and readable legacy recovery record the manual snapshot.
+
+One-shot components now include their explicit Gregorian UTC calendar as well as the zone. Apple's [nextInterval documentation](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/nextinterval) specifies that missing calendars use Calendar.current and callbacks can be delayed until device use. This removes implicit calendar/zone interpretation; it does not guarantee callback delivery at the deadline.

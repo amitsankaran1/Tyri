@@ -96,10 +96,11 @@ enum BreakMonitoring {
         let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
         let end = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
         let windowEnd = now.addingTimeInterval(TimeInterval(max(15, minutes) * 60))
-        let cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: now),
-            intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: windowEnd),
+            intervalStart: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: now),
+            intervalEnd: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: windowEnd),
             repeats: false,
             warningTime: minutes < 15 ? DateComponents(minute: 15 - max(1, minutes)) : nil
         )
@@ -137,13 +138,14 @@ enum BreakMonitoring {
             guard !DeviceActivityCenter().activities.contains(breakActivityName(for: blockID)) else { return }
             guard let reservation = EnforcementTransaction.beginEffect() else { return }
             guard breakEnd(blockID: blockID) == end else { reservation.finish(); return }
-            let cal = Calendar.current
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = TimeZone(secondsFromGMT: 0)!
             let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
             let monitorEnd = max(end, start.addingTimeInterval(900))
             let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
             let schedule = DeviceActivitySchedule(
-                intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
-                intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+                intervalStart: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+                intervalEnd: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
                 repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
             let base = "break.\(blockID.uuidString)"
             let context = registrationContext(blockID: blockID, end: end)

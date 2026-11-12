@@ -1,4 +1,4 @@
-// REVIEW-ONLY repro R1: production extension + shared enforcement code reading an
+// Regression R1: production extension + shared enforcement code reading an
 // unreadable (forward-incompatible / corrupt) App Group store.
 import Foundation
 var passed = 0, failed = 0
@@ -33,6 +33,9 @@ suite.set(goodGroups, forKey: SharedDefaults.Keys.groups)
 QAClock.now = Date()
 UsageMonitoring.startLockout(blockID: timer.id, minutes: 30)
 let end = suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: timer.id)) as! Date
+let expirySchedule = DeviceActivityCenter.schedules[UsageMonitoring.lockActivityName(for: timer.id)]!
+expect(expirySchedule.intervalEnd.calendar?.identifier == .gregorian && expirySchedule.intervalEnd.timeZone?.secondsFromGMT() == 0, "absolute deadline includes an explicit Gregorian UTC calendar")
+expect(expirySchedule.intervalEnd.calendar?.date(from: expirySchedule.intervalEnd) == end, "native absolute components represent the persisted deadline")
 expect(apps(timer.id) == [11, 12], "control: usage threshold lockout shields")
 suite.set(Data("not-json".utf8), forKey: SharedDefaults.Keys.groups)
 QAClock.now = end.addingTimeInterval(-25 * 60) // 5 minutes into a 30-minute lock
@@ -76,6 +79,27 @@ QAClock.now = manualEnd.addingTimeInterval(1)
 UsageMonitoring.reconcileLockout(blockID: timer.id)
 expect(apps(timer.id) == [11, 12], "unreadable rule expiry preserves independently active manual protection")
 expect(suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: timer.id)) == nil, "manual protection does not strand an expired timed deadline")
+// Old builds had no manual-owner snapshot: unknown must not mean disabled.
+suite.set(try! JSONEncoder().encode([manual]), forKey: SharedDefaults.Keys.blocks)
+UsageMonitoring.startLockout(blockID: timer.id, minutes: 5)
+let legacyEnd = suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: timer.id)) as! Date
+suite.removeObject(forKey: "usageLockManual.\(timer.id)")
+suite.set(unreadable, forKey: SharedDefaults.Keys.blocks)
+QAClock.now = legacyEnd.addingTimeInterval(1)
+UsageMonitoring.reconcileLockout(blockID: timer.id)
+expect(apps(timer.id) == [11, 12], "legacy unknown manual ownership preserves independent protection")
+expect(suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: timer.id)) == nil, "legacy timed ownership still expires")
+let calendar = Calendar.current
+let today = calendar.startOfDay(for: QAClock.now)
+QAClock.now = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: today)!
+let bounded = BlockRule(name: "Morning", type: .schedule, appGroupIDs: [list.id], schedule: BlockingSchedule(startHour: 9, endHour: 11, weekdays: Set(1...7)))
+suite.set(try! JSONEncoder().encode([bounded]), forKey: SharedDefaults.Keys.blocks)
+ScheduleEnforcement.reconcile(block: bounded, now: QAClock.now)
+expect(apps(bounded.id) == [11, 12], "bounded schedule starts with readable data")
+suite.set(Data("not-json".utf8), forKey: SharedDefaults.Keys.groups)
+QAClock.now = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
+ScheduleEnforcement.reconcile(block: bounded, now: QAClock.now)
+expect(apps(bounded.id) == nil, "known schedule expiry releases even if target lists are unreadable")
 print("RESULT R1: \(passed) controls passed, \(failed) controls failed")
 suite.removePersistentDomain(forName: SharedDefaults.qaName)
 exit(failed == 0 ? 0 : 1)

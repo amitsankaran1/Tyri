@@ -389,24 +389,28 @@ final class ForegroundRecovery: ObservableObject {
         let changed = reconcileDeadlines()
         let defaults = SharedDefaults.suite
         let now = Date()
-        guard let groups = BlockResolution.loadGroups(), let blocks = BlockResolution.loadBlocks() else { return changed }
+        // Persisted intent (including emergency/expiry clears) remains retryable
+        // even when unrelated configuration cannot be decoded.
+        defer { BlockingActuator.replayPending() }
+        if let session = AdHocMonitoring.session, session.registered != false {
+            BlockingActuator.apply(tokens: session.tokens, blockID: session.id)
+        }
+        guard let blocks = BlockResolution.loadBlocks() else { return changed }
         for block in blocks {
-            guard Set(block.appGroupIDs).isSubset(of: Set(groups.map(\.id))) else { continue }
             if block.type == .schedule { ScheduleEnforcement.reconcile(block: block, now: now, stopMonitoring: false) }
             if block.type != .schedule {
                 let locked = block.type == .timer &&
                     (defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date).map { $0 > now } == true
+                if locked { defaults.set(block.isEnabled, forKey: "usageLockManual.\(block.id)") }
                 if (block.isEnabled || locked) && !BreakMonitoring.isOnBreak(blockID: block.id) {
-                    BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups), blockID: block.id)
+                    if let tokens = BlockResolution.tokens(forBlockID: block.id) {
+                        BlockingActuator.apply(tokens: tokens, blockID: block.id)
+                    }
                 } else {
                     BlockingActuator.clearShields(blockID: block.id)
                 }
             }
         }
-        if let session = AdHocMonitoring.session, session.registered != false {
-            BlockingActuator.apply(tokens: session.tokens, blockID: session.id)
-        }
-        BlockingActuator.replayPending()
         return changed
     }
 
@@ -535,10 +539,11 @@ final class ForegroundRecovery: ObservableObject {
         let start = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
         let monitorEnd = max(end, start.addingTimeInterval(900))
         let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
-        let calendar = Calendar.current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         return DeviceActivitySchedule(
-            intervalStart: calendar.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
-            intervalEnd: calendar.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+            intervalStart: calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
             repeats: false,
             warningTime: warning > 0 ? DateComponents(second: warning) : nil)
     }

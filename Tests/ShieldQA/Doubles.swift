@@ -56,11 +56,12 @@ struct QAGroup { var id = UUID() }
 struct BlockRule {var appGroupIDs: Set<UUID> = []; enum Kind {case schedule,timer};let id:UUID;var type:Kind = .timer;var schedule:Schedule?=nil }
 struct Schedule {var weekdays:Set<Int>=[]}
 enum BlockResolution {
- static func loadBlocks() -> [BlockRule]? { [] }
+ static var known: Set<UUID> = []
+ static func loadBlocks() -> [BlockRule]? { known.subtracting(missing).map { BlockRule(id: $0) } }
  struct Tokens: Codable, Equatable {var apps:Set<Int>=[];var categories:Set<Int>=[];var webDomains:Set<Int>=[];var domains:Set<String>=[]}
  static var selection=Tokens()
  static var missing: Set<UUID> = []
- static func loadBlock(id:UUID)->BlockRule? {missing.contains(id) ? nil : BlockRule(id:id)}
+ static func loadBlock(id:UUID)->BlockRule? {known.contains(id) && !missing.contains(id) ? BlockRule(id:id) : nil}
  static func loadGroups()->[QAGroup]? {[]}
  static func tokens(for block:BlockRule,groups:[QAGroup])->Tokens {selection}
 }
@@ -70,6 +71,7 @@ enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bo
   setbuf(stdout, nil)
   if CommandLine.arguments.count == 3, ["replace", "clear", "crash"].contains(CommandLine.arguments[1]) {
    let id = UUID(uuidString:CommandLine.arguments[2])!
+   BlockResolution.known.insert(id)
    if CommandLine.arguments[1] == "crash" { NativeProbe.onWrite = { exit(0) } }
    if CommandLine.arguments[1] == "clear" { BlockingActuator.clearShields(blockID:id) }
    else { BlockingActuator.apply(tokens:.init(apps:[200]),blockID:id) }
@@ -79,6 +81,7 @@ enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bo
   var passed=0;var failed=0
   func check(_ yes:Bool,_ name:String){print("\(yes ? "PASS" : "FAIL"): \(name)");if yes {passed+=1}else{failed+=1}}
   let id=UUID(),other=UUID()
+  BlockResolution.known.formUnion([id, other])
   for n in [0,1,49,50,51,99,100,101,399,400] {
    let apps=Set(0..<n),web=Set(1000..<(1000+n))
    BlockingActuator.apply(tokens:.init(apps:apps,categories:[9000],webDomains:web,domains:["example.com"]),blockID:id)
@@ -92,6 +95,7 @@ enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bo
   BlockingActuator.apply(tokens:.init(apps:[2]),blockID:id)
   check(ManagedSettingsStore(named:BlockingActuator.appsStoreName(for:id,chunk:7)).shield.applications==nil,"shrink clears old chunks")
   BlockingActuator.clearShields(blockID:id)
+  check(SharedDefaults.suite.data(forKey: "shieldIntent.v1." + id.uuidString) != nil, "live-owner clear retains its durable tombstone")
   check(ManagedSettingsStore(named:BlockingActuator.appsStoreName(for:other)).shield.applications==[1],"release one block preserves overlapping owner")
   ManagedSettingsStore.dropApps=true
   BlockingActuator.apply(tokens:.init(apps:[1]),blockID:id)
@@ -200,6 +204,7 @@ enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bo
   check(ManagedSettingsStore(named:BlockingActuator.appsStoreName(for:id)).shield.applications == nil,
         "foreground replays a pending clear even when its block/session was deleted")
   let crashedID = UUID()
+  BlockResolution.known.insert(crashedID)
   let child = Process()
   child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
   child.arguments = ["crash", crashedID.uuidString]

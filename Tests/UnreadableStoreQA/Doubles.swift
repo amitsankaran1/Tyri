@@ -1,4 +1,4 @@
-// REVIEW-ONLY doubles: deterministic DeviceActivity / ManagedSettings / FamilyControls stand-ins.
+// OS doubles: deterministic DeviceActivity / ManagedSettings / FamilyControls stand-ins.
 import Foundation
 enum QAClock { static var now = Date() }
 typealias ApplicationToken = Int

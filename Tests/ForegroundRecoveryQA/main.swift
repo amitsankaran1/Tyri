@@ -74,7 +74,7 @@ enum Probe {
     }
 }
 extension SharedDefaults.Keys { static let migratedToBlocksV2 = "migration" }
-extension BlockResolution { static func loadBlocks() -> [BlockRule]? { Array(blocks.values) } }
+extension BlockResolution { static var unreadable = false; static func loadBlocks() -> [BlockRule]? { unreadable ? nil : Array(blocks.values) } }
 extension BlockingSchedule {
     func deviceActivitySchedule() -> DeviceActivitySchedule {
         DeviceActivitySchedule(intervalStart: DateComponents(hour: 0), intervalEnd: DateComponents(hour: 23), repeats: true)
@@ -390,6 +390,17 @@ extension BlockingSchedule {
         precondition(SchedulingManager.shared.foregroundActive)
         for _ in 0..<10 { try await Task.sleep(nanoseconds: 10_000_000) }
         precondition(UIApplication.shared.assertions.isEmpty, "Background assertion leaked after completion/expiration")
+        let emergencyOwner = UUID()
+        State.shields.insert(emergencyOwner)
+        BlockingActuator.pendingClear = emergencyOwner
+        BlockResolution.unreadable = true
+        BlockStore.shared.loadError = "Unreadable rules"
+        recovery.request()
+        try await wait { !State.shields.contains(emergencyOwner) }
+        precondition(BlockingActuator.pendingClear == nil, "Unreadable data prevented replay of an accepted emergency clear")
+        BlockResolution.unreadable = false
+        BlockStore.shared.loadError = nil
+        print("PASS: persisted emergency clear replays despite unreadable rules")
         print("PASS: background assertion expires, stops recovery and ends exactly once")
         print("PASS: background cancels pending recovery/rerun and activation resumes")
         print("PASS: request during final observation queues a fresh usage-limit registration")

@@ -46,10 +46,11 @@ enum AdHocMonitoring {
         let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
         let item = AdHocSession(group: group, startedAt: start, endsAt: start.addingTimeInterval(Double(minutes * 60)), registered: false)
         guard !item.tokens.isEmpty || !item.tokens.domains.isEmpty else { throw SessionError.emptyList }
-        let cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
-            intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: item.endsAt), repeats: false)
+            intervalStart: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: item.endsAt), repeats: false)
         // No shielding unless background expiry registration succeeds.
         try save(item)
         let base = "adhoc.\(item.id.uuidString)"
@@ -101,15 +102,16 @@ enum AdHocMonitoring {
                 if !DeviceActivityCenter().activities.contains(activityName(item.id)) {
                     guard let reservation = EnforcementTransaction.beginEffect() else { return }
                     guard session?.id == item.id else { reservation.finish(); return }
-                    let cal = Calendar.current
+                    var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = TimeZone(secondsFromGMT: 0)!
                     // Preserve the deadline. Short remaining windows use the warning
                     // callback, just like short usage lockouts and breaks.
                     let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
                     let monitorEnd = max(item.endsAt, start.addingTimeInterval(900))
                     let warning = Int(ceil(monitorEnd.timeIntervalSince(item.endsAt)))
                     let schedule = DeviceActivitySchedule(
-                        intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
-                        intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+                        intervalStart: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+                        intervalEnd: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
                         repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
                     let base = "adhoc.\(item.id.uuidString)"
                     guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: registrationContext(item)) else { reservation.finish(); return }
