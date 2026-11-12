@@ -77,6 +77,14 @@ enum BlockingActuator {
         finishedWhileInactive[id, default: []].insert(operation)
     }
 
+    static var persistedOwnerIDs: Set<UUID> {
+        let prefixes = ["shieldIntent.v1.", "usagelock.", "running.", "manualActivation."]
+        return Set(SharedDefaults.suite.dictionaryRepresentation().keys.compactMap { key in
+            guard let prefix = prefixes.first(where: { key.hasPrefix($0) }) else { return nil }
+            return UUID(uuidString: String(key.dropFirst(prefix.count)))
+        })
+    }
+
     private static func intentKey(_ id: UUID) -> String { "shieldIntent.v1.\(id.uuidString)" }
     private static func loadIntent(_ id: UUID) -> Intent? {
         SharedDefaults.suite.data(forKey: intentKey(id)).flatMap { try? JSONDecoder().decode(Intent.self, from: $0) }
@@ -178,7 +186,7 @@ enum BlockingActuator {
             }
             current.applied = result.matched && current.inFlight.isEmpty
             current.chunks = current.inFlight.isEmpty ? result.chunks : max(current.chunks, result.chunks)
-            if current.tokens == nil, current.applied, BlockResolution.loadBlock(id: id) == nil {
+            if current.tokens == nil, current.applied, let blocks = BlockResolution.loadBlocks(), !blocks.contains(where: { $0.id == id }) {
                 // No live older writer can land and this owner no longer exists.
                 // Compaction keeps recovery proportional to current rules/sessions.
                 SharedDefaults.suite.removeObject(forKey: intentKey(id))
@@ -217,7 +225,9 @@ enum BlockingActuator {
         guard let transition = EnforcementTransaction.begin() else { return false }
         defer { transition.finish() }
 
-        guard let block = BlockResolution.loadBlock(id: blockID) else { return false }
+        guard let block = BlockResolution.loadBlock(id: blockID),
+              let groups = BlockResolution.loadGroups(),
+              Set(block.appGroupIDs).isSubset(of: Set(groups.map(\.id))) else { return false }
 
         if !bypassWeekday, block.type == .schedule, let schedule = block.schedule {
             let weekday = Calendar.current.component(.weekday, from: Date())
@@ -228,7 +238,7 @@ enum BlockingActuator {
             BreakMonitoring.resetAllowance(blockID: blockID)
         }
 
-        let tokens = BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups())
+        let tokens = BlockResolution.tokens(for: block, groups: groups)
         apply(tokens: tokens, blockID: blockID)
 
         if setRunningFlag {

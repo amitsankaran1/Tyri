@@ -188,15 +188,16 @@ enum UsageMonitoring {
 
     private static func currentUsageContext(blockID: UUID) -> String? {
         guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) == nil,
-              let block = BlockResolution.loadBlock(id: blockID) else { return nil }
-        return registrationContext(for: block, groups: BlockResolution.loadGroups())
+              let block = BlockResolution.loadBlock(id: blockID),
+              let groups = BlockResolution.loadGroups() else { return nil }
+        return registrationContext(for: block, groups: groups)
     }
 
     /// Convenience used by the extension, which loads from the shared store.
     @discardableResult
     static func startUsageMonitor(forBlockID id: UUID) -> Bool {
-        guard let block = BlockResolution.loadBlock(id: id) else { return false }
-        return startUsageMonitor(for: block, groups: BlockResolution.loadGroups())
+        guard let block = BlockResolution.loadBlock(id: id), let groups = BlockResolution.loadGroups() else { return false }
+        return startUsageMonitor(for: block, groups: groups)
     }
 
     static func stopUsageMonitor(for blockID: UUID) {
@@ -229,7 +230,8 @@ enum UsageMonitoring {
         defer { transition.finish() }
 
         let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
-        guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer else { return }
+        guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
+              BlockResolution.loadGroups() != nil else { return }
         let key = SharedDefaults.Keys.usageLockEnd(blockID: blockID)
         // Repeated thresholds must not replace the live monitor or its deadline.
         if let end = SharedDefaults.suite.object(forKey: key) as? Date, end > now {
@@ -238,6 +240,7 @@ enum UsageMonitoring {
         }
         let end = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
         SharedDefaults.suite.set(end, forKey: key)
+        SharedDefaults.suite.set(block.isEnabled, forKey: "usageLockManual.\(blockID)")
         log.notice("Lock started \(blockID.uuidString, privacy: .public), expires \(end.timeIntervalSince1970)")
         BlockingActuator.start(blockID: blockID, bypassWeekday: true, setRunningFlag: false)
 
@@ -248,15 +251,16 @@ enum UsageMonitoring {
     }
 
     private static func registerLockout(blockID: UUID, end: Date, now: Date) {
-        let cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
         // DeviceActivity requires a minimum 15-minute interval. Short lockouts
         // use the warning callback at their real deadline, with end as a backstop.
         let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
         let monitorEnd = max(end, start.addingTimeInterval(900))
         let warning = monitorEnd.timeIntervalSince(end)
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
-            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+            intervalStart: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
             repeats: false, warningTime: warning > 0 ? DateComponents(second: Int(ceil(warning))) : nil
         )
         let base = "lock.\(blockID.uuidString)"
@@ -294,8 +298,14 @@ enum UsageMonitoring {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
+        guard let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date else { return }
+        if end <= now {
+            releaseExpiredLock(blockID: blockID, now: now)
+            return
+        }
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
-              let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date else { return }
+              let groups = BlockResolution.loadGroups(),
+              Set(block.appGroupIDs).isSubset(of: Set(groups.map(\.id))) else { return }
         if end > now {
             let activity = lockActivityName(for: blockID)
             EnforcementTransaction.afterUnlock(key: "repairLock.\(blockID)") {
@@ -306,17 +316,27 @@ enum UsageMonitoring {
                       end > Date() else { return }
                 registerLockout(blockID: blockID, end: end, now: Date())
             }
-            BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()), blockID: blockID)
+            BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups), blockID: blockID)
             return
         }
-        // Invalidate persisted state before stopping: stop can itself deliver an end callback.
-        log.notice("Lock expired \(blockID.uuidString, privacy: .public), rearming allowance")
-        stopLockout(for: blockID)
-        if block.isEnabled {
-            BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()), blockID: blockID)
-        } else {
-            BlockingActuator.end(blockID: blockID)
+    }
+
+    static func releaseExpiredLock(blockID: UUID, now: Date = Date(), stopMonitoring: Bool = true) {
+        guard let lease = EnforcementTransaction.begin() else { return }
+        defer { lease.finish() }
+        guard let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date,
+              end <= now else { return }
+        let manualSnapshot = SharedDefaults.suite.object(forKey: "usageLockManual.\(blockID)") as? Bool
+        stopLockout(for: blockID, stopMonitoring: stopMonitoring)
+        let block = BlockResolution.loadBlock(id: blockID)
+        let manual = block?.isEnabled ?? manualSnapshot
+        if manual == false { BlockingActuator.end(blockID: blockID, stopMonitoring: stopMonitoring) }
+        // Legacy locks may predate the snapshot. Unknown ownership cannot be
+        // interpreted as off: preserve the intent and keep Emergency Access available.
+        else if let tokens = BlockResolution.tokens(forBlockID: blockID) {
+            BlockingActuator.apply(tokens: tokens, blockID: blockID)
         }
+        guard stopMonitoring else { return }
         let generation = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID))
         EnforcementTransaction.afterUnlock(key: "rearm.\(blockID)") {
             guard !isUsageMonitorActive(for: blockID), let rearm = EnforcementTransaction.beginEffect() else { return }
@@ -337,6 +357,7 @@ enum UsageMonitoring {
         MonitorRegistration.invalidate("lock.\(blockID.uuidString)", legacyName: "lock.\(blockID.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID))
+        SharedDefaults.suite.removeObject(forKey: "usageLockManual.\(blockID)")
         if stopMonitoring {
             EnforcementTransaction.afterUnlock(key: "stop." + activity.rawValue) {
                 DeviceActivityCenter().stopMonitoring([activity])

@@ -33,6 +33,7 @@ final class ForegroundRecovery: ObservableObject {
     static let shared = ForegroundRecovery()
     @Published private(set) var isChecking = true
     @Published private(set) var registeredUsageIDs: Set<UUID> = []
+    @Published private(set) var hasChecked = false
     private var active = true
     // Explicit user mutations own a bounded completion window. Routine refresh
     // does not: it stops on resignation. Expiration revokes both kinds of work.
@@ -84,12 +85,14 @@ final class ForegroundRecovery: ObservableObject {
     }
 
     func requestAccepted() {
-        registeredUsageIDs = []
-        guard active else { return }
         if !acceptedWork {
             acceptedWork = true
             endAcceptedWork = beginBackgroundWork()
         }
+        // An explicit Save can arrive while the scene is inactive (e.g. a
+        // system sheet). Its bounded assertion owns admission just like a command.
+        BlockingActuator.setEffectsEnabled(true)
+        EnforcementTransaction.setEffectsEnabled(true)
         Task { @MainActor in self.request() }
     }
 
@@ -188,12 +191,8 @@ final class ForegroundRecovery: ObservableObject {
 
     func request() {
         guard started, canRun else { return }
-        guard BlockStore.shared.loadError == nil, AppGroupStore.shared.loadError == nil else {
-            isChecking = false
-            finishAcceptedWork()
-            return
-        }
-        guard SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { prepare(); return }
+        if !SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2),
+           BlockStore.shared.loadError == nil, AppGroupStore.shared.loadError == nil { prepare(); return }
         // Deadline fallback is independent of any stalled native operation.
         // This lane never waits for a lease and never performs DeviceActivity IPC.
         let endDeadlineWork = beginBackgroundWork()
@@ -212,6 +211,11 @@ final class ForegroundRecovery: ObservableObject {
                 UsageLimitManager.shared.refresh()
             }
         } else { endDeadlineWork() }
+        guard BlockStore.shared.loadError == nil, AppGroupStore.shared.loadError == nil else {
+            isChecking = false
+            finishAcceptedWork()
+            return
+        }
         guard !running else {
             isChecking = true
             rerunRequested = true
@@ -299,17 +303,19 @@ final class ForegroundRecovery: ObservableObject {
                 observed = await Task.detached { Self.observe() }.value
                 try await withLease {
                     reconcileState()
+                    guard let blocks = BlockResolution.loadBlocks(), let groups = BlockResolution.loadGroups() else { return }
                     registeredUsageIDs = Set(
-                        BlockResolution.loadBlocks().filter {
+                        blocks.filter {
                             $0.type == .timer
                                 && SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: $0.id))
                                     == nil
                                 && observed.contains(UsageMonitoring.usageActivityName(for: $0.id).rawValue)
                                 && MonitorRegistration.load("usage.\($0.id.uuidString)", legacyName: UsageMonitoring.legacyUsageName($0.id),
-                                    context: UsageMonitoring.registrationContext(for: $0, groups: BlockResolution.loadGroups()) ?? "")?.confirmed?.context
-                                    == UsageMonitoring.registrationContext(for: $0, groups: BlockResolution.loadGroups())
+                                    context: UsageMonitoring.registrationContext(for: $0, groups: groups) ?? "")?.confirmed?.context
+                                    == UsageMonitoring.registrationContext(for: $0, groups: groups)
                         }.map(\.id))
                 }
+                hasChecked = true
                 SchedulingManager.shared.publishRecovery(errors: errors)
                 UsageLimitManager.shared.refresh()
                 AdHocManager.shared.publishPersistedState()
@@ -362,7 +368,8 @@ final class ForegroundRecovery: ObservableObject {
         }
         if namespace.hasPrefix("usage.") {
             guard defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) == nil else { return nil }
-            return UsageMonitoring.registrationContext(for: block, groups: BlockResolution.loadGroups())
+            guard let groups = BlockResolution.loadGroups() else { return nil }
+            return UsageMonitoring.registrationContext(for: block, groups: groups)
         }
         if namespace.hasPrefix("lock."),
             let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as? Date, end > Date()
@@ -382,23 +389,28 @@ final class ForegroundRecovery: ObservableObject {
         let changed = reconcileDeadlines()
         let defaults = SharedDefaults.suite
         let now = Date()
-        let groups = BlockResolution.loadGroups()
-        for block in BlockResolution.loadBlocks() {
+        // Persisted intent (including emergency/expiry clears) remains retryable
+        // even when unrelated configuration cannot be decoded.
+        defer { BlockingActuator.replayPending() }
+        if let session = AdHocMonitoring.session, session.registered != false {
+            BlockingActuator.apply(tokens: session.tokens, blockID: session.id)
+        }
+        guard let blocks = BlockResolution.loadBlocks() else { return changed }
+        for block in blocks {
             if block.type == .schedule { ScheduleEnforcement.reconcile(block: block, now: now, stopMonitoring: false) }
             if block.type != .schedule {
                 let locked = block.type == .timer &&
                     (defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date).map { $0 > now } == true
+                if locked { defaults.set(block.isEnabled, forKey: "usageLockManual.\(block.id)") }
                 if (block.isEnabled || locked) && !BreakMonitoring.isOnBreak(blockID: block.id) {
-                    BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups), blockID: block.id)
+                    if let tokens = BlockResolution.tokens(forBlockID: block.id) {
+                        BlockingActuator.apply(tokens: tokens, blockID: block.id)
+                    }
                 } else {
                     BlockingActuator.clearShields(blockID: block.id)
                 }
             }
         }
-        if let session = AdHocMonitoring.session, session.registered != false {
-            BlockingActuator.apply(tokens: session.tokens, blockID: session.id)
-        }
-        BlockingActuator.replayPending()
         return changed
     }
 
@@ -406,21 +418,13 @@ final class ForegroundRecovery: ObservableObject {
         let defaults = SharedDefaults.suite
         let now = Date()
         var changed = false
-        for block in BlockResolution.loadBlocks() {
-            if block.type == .timer,
-                let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date,
-                end <= now
-            {
-                UsageMonitoring.stopLockout(for: block.id, stopMonitoring: false)
-                if block.isEnabled {
-                    BlockingActuator.apply(
-                        tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()),
-                        blockID: block.id)
-                } else {
-                    BlockingActuator.end(blockID: block.id, stopMonitoring: false)
-                }
+        for id in BlockingActuator.persistedOwnerIDs {
+            if let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as? Date, end <= now {
+                UsageMonitoring.releaseExpiredLock(blockID: id, now: now, stopMonitoring: false)
                 changed = true
             }
+        }
+        for block in BlockResolution.loadBlocks() ?? [] {
             if let end = BreakMonitoring.pendingEnd(blockID: block.id), end <= now {
                 BreakMonitoring.endBreak(blockID: block.id, reapply: true, stopMonitoring: false)
                 changed = true
@@ -491,7 +495,8 @@ final class ForegroundRecovery: ObservableObject {
             else { return }
             jobs.append(RecoveryJob(ticket: ticket, schedule: schedule, events: events, fallback: fallback))
         }
-        for block in BlockResolution.loadBlocks() {
+        guard let blocks = BlockResolution.loadBlocks(), let groups = BlockResolution.loadGroups() else { return jobs }
+        for block in blocks {
             if block.type == .schedule, let schedule = block.schedule {
                 plan(
                     "block.\(block.id.uuidString)", legacy: "block.\(block.id.uuidString)",
@@ -502,7 +507,7 @@ final class ForegroundRecovery: ObservableObject {
                     plan(
                         "lock.\(block.id.uuidString)", legacy: "lock.\(block.id.uuidString)",
                         schedule: deadlineSchedule(end))
-                } else if let event = UsageMonitoring.usageEvent(for: block, groups: BlockResolution.loadGroups()) {
+                } else if let event = UsageMonitoring.usageEvent(for: block, groups: groups) {
                     plan(
                         "usage.\(block.id.uuidString)", legacy: UsageMonitoring.legacyUsageName(block.id),
                         schedule: UsageMonitoring.allDaySchedule,
@@ -534,10 +539,11 @@ final class ForegroundRecovery: ObservableObject {
         let start = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
         let monitorEnd = max(end, start.addingTimeInterval(900))
         let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
-        let calendar = Calendar.current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         return DeviceActivitySchedule(
-            intervalStart: calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
-            intervalEnd: calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+            intervalStart: calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
             repeats: false,
             warningTime: warning > 0 ? DateComponents(second: warning) : nil)
     }
@@ -564,6 +570,7 @@ final class ForegroundRecovery: ObservableObject {
 
     private func retire(observed: Set<String>) async throws {
         let names = try await withLease {
+            guard BlockResolution.loadBlocks() != nil, BlockResolution.loadGroups() != nil else { return Set<String>() }
             for key in SharedDefaults.suite.dictionaryRepresentation().keys
             where key.hasPrefix(MonitorRegistration.prefix) {
                 let namespace = String(key.dropFirst(MonitorRegistration.prefix.count))

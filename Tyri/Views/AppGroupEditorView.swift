@@ -34,6 +34,10 @@ struct AppGroupEditorView: View {
     @State private var showRemovalBlockedAlert = false
     @State private var hasLoaded = false
 
+    private var savedDataUnavailable: Bool {
+        groupStore.loadError != nil || blockStore.loadError != nil
+    }
+
     private var usedByCount: Int {
         groupStore.blockCount(for: groupID, in: blockStore.blocks)
     }
@@ -48,6 +52,12 @@ struct AppGroupEditorView: View {
 
     var body: some View {
         Form {
+            if savedDataUnavailable {
+                Section {
+                    Text("Saved data could not be read. This list cannot be saved or deleted until your lists and blocks can be loaded. Open Settings for diagnostics or Emergency Access.")
+                        .accessibilityIdentifier("list-data-unavailable")
+                }
+            }
             Section("Name") {
                 TextField("List name", text: $name)
                     .textInputAutocapitalization(.words)
@@ -126,6 +136,7 @@ struct AppGroupEditorView: View {
                             Text("Delete List")
                         }
                     }
+                    .disabled(savedDataUnavailable)
                 } footer: {
                     if usedByCount > 0 {
                         Text("Used by \(usedByCount) block\(usedByCount == 1 ? "" : "s"). Deleting it removes it from them.")
@@ -138,7 +149,7 @@ struct AppGroupEditorView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish() } }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Save") { save() }.disabled(savedDataUnavailable || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .familyActivityPicker(isPresented: $showPicker, selection: $selection)
@@ -256,6 +267,7 @@ struct AppGroupEditorView: View {
     }
 
     private func deleteGroup() {
+        guard groupStore.loadError == nil, blockStore.loadError == nil else { return }
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { ForegroundRecovery.shared.finish(transition) }
 

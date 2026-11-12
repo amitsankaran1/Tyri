@@ -42,7 +42,7 @@ struct SettingsView: View {
             } header: { Text("Blocking tag") } footer: {
                 Text("Scan your tag in Tyri to turn all tag blocks on or off together.")
             }
-            if screenTime.authorizationStatus == .approved {
+            if screenTime.authorizationStatus == .approved || !BlockingActuator.persistedOwnerIDs.isEmpty {
                 Section {
                     Button { showChallenge = true } label: {
                         Label("Start typing challenge", systemImage: "keyboard")

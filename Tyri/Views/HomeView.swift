@@ -37,13 +37,14 @@ struct HomeView: View {
     private var onBreak: [BlockRule] { blocks(in: .paused) }
     private var attention: [BlockRule] { blocks(in: .unavailable) }
     private var configured: [BlockRule] {
-        blockStore.blocks.filter { [.off, .setup].contains(status($0).state) }
+        blockStore.blocks.filter { [.off, .setup, .checking].contains(status($0).state) }
     }
     private var tagIsOn: Bool { blockStore.blocks(ofType: .tag).contains { $0.isEnabled } }
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedID) {
+                RecoveryStatusSection()
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         BlockStatusCard(status: overview)
@@ -67,7 +68,7 @@ struct HomeView: View {
                     .listRowSeparator(.hidden)
                 }
                 blockSection("Needs attention — tap a block to fix it", blocks: attention)
-                if !authorized || groupStore.groups.isEmpty || blockStore.blocks.isEmpty {
+                if blockStore.loadError == nil && groupStore.loadError == nil && (!authorized || groupStore.groups.isEmpty || blockStore.blocks.isEmpty) {
                     Section("Get started") {
                         if !authorized {
                             Button { showSettings = true } label: {
@@ -95,7 +96,7 @@ struct HomeView: View {
                 }
                 Section {
                     Button { showAdHoc = true } label: {
-                        Label(adHoc.session.map { "\($0.group.name) · Unblocks at \($0.endsAt.formatted(date: .omitted, time: .shortened))" } ?? "Block for a while", systemImage: "timer")
+                        Label(adHocLabel, systemImage: adHoc.enforcementError == nil ? "timer" : "exclamationmark.circle")
                     }
                     .accessibilityIdentifier("ad-hoc-block")
                 }
@@ -118,6 +119,7 @@ struct HomeView: View {
                             }
                         }
                     } label: { Label("Add block", systemImage: "plus") }
+                    .disabled(blockStore.loadError != nil || groupStore.loadError != nil)
                 }
             }
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
@@ -197,13 +199,26 @@ struct HomeView: View {
         }
     }
 
+    private var adHocLabel: String {
+        guard let session = adHoc.session else { return "Block for a while" }
+        if adHoc.enforcementError != nil { return "\(session.group.name) · Needs attention" }
+        if session.registered == false { return "\(session.group.name) · Waiting for iOS" }
+        return "\(session.group.name) · Unblocks at \(session.endsAt.formatted(date: .omitted, time: .shortened))"
+    }
+
     private var overview: BlockStatusPresentation {
+        if blockStore.loadError != nil || groupStore.loadError != nil {
+            return .init(state: .unavailable, detail: "Saved data could not be read. Existing protection is preserved. Open Settings for diagnostics or Emergency Access.")
+        }
         if !authorized {
             return .init(state: .setup, detail: "Allow Screen Time access to start blocking distractions.")
         }
         if let session = adHoc.session {
             if let error = adHoc.enforcementError {
                 return .init(state: .unavailable, detail: "\(session.group.name): \(error) Open Block for a while below for details.")
+            }
+            if session.registered == false {
+                return .init(state: .checking, detail: "\(session.group.name): Blocking starts after iOS confirms. Other active blocks still apply.")
             }
             return .init(state: .blocking, detail: "\(session.group.name) · Unblocks at \(session.endsAt.formatted(date: .omitted, time: .shortened)). Other active blocks still apply.")
         }
@@ -220,6 +235,9 @@ struct HomeView: View {
         }
         if let first = attention.first {
             return .init(state: .unavailable, detail: "\(first.name): \(status(first).detail) Tap it below for recovery steps.")
+        }
+        if blockStore.blocks.contains(where: { status($0).state == .checking }) {
+            return .init(state: .checking, detail: "Checking saved usage limits with Screen Time.")
         }
         return .init(state: .off, detail: "No blocks are on right now. Your scheduled and tag blocks are ready when you need them.")
     }

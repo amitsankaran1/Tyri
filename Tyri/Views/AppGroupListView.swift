@@ -10,7 +10,8 @@ struct AppGroupListView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedID) {
-                if groups.groups.isEmpty {
+                RecoveryStatusSection()
+                if groups.groups.isEmpty && groups.loadError == nil && blocks.loadError == nil {
                     Section {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Choose your distractions").font(.headline)
@@ -50,6 +51,7 @@ struct AppGroupListView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { newGroup = AppGroup(name: "") } label: { Label("Add list", systemImage: "plus") }
+                        .disabled(groups.loadError != nil || blocks.loadError != nil)
                 }
             }
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)

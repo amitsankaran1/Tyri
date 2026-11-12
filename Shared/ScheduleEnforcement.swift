@@ -45,8 +45,9 @@ enum ScheduleEnforcement {
             defaults.set(window.start, forKey: windowKey)
             defaults.set(true, forKey: runningKey)
             if !BreakMonitoring.isOnBreak(blockID: block.id) {
-                BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()),
-                                       blockID: block.id)
+                if let tokens = BlockResolution.tokens(forBlockID: block.id) {
+                    BlockingActuator.apply(tokens: tokens, blockID: block.id)
+                }
             }
         } else {
             if defaults.bool(forKey: runningKey) || defaults.object(forKey: windowKey) != nil {
@@ -57,8 +58,9 @@ enum ScheduleEnforcement {
             // Ending a schedule must not lift an independent manual activation.
             if block.isEnabled {
                 if !BreakMonitoring.isOnBreak(blockID: block.id) {
-                    BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()),
-                                           blockID: block.id)
+                    if let tokens = BlockResolution.tokens(forBlockID: block.id) {
+                        BlockingActuator.apply(tokens: tokens, blockID: block.id)
+                    }
                 }
             } else {
                 BlockingActuator.clearShields(blockID: block.id)

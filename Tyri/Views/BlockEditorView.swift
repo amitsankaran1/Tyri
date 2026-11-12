@@ -176,6 +176,7 @@ struct BlockEditorView: View {
         }
         .navigationTitle(newBlock == nil ? "Block details" : "New block")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish() } }
             ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!canSave).accessibilityIdentifier("save-block-toolbar") }
@@ -194,7 +195,7 @@ struct BlockEditorView: View {
             // a Save right after doesn't re-apply the shield.
             if !showing { isEnabled = storedBlock?.isEnabled ?? false }
         }
-        .alert("Couldn't start break", isPresented: Binding(
+        .alert("Break status", isPresented: Binding(
             get: { breakManager.lastError != nil },
             set: { if !$0 { breakManager.lastError = nil } }
         )) { Button("OK", role: .cancel) { breakManager.lastError = nil } }

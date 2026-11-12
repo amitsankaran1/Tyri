@@ -29,6 +29,10 @@ enum TestHarness {
     /// can't synthesize ApplicationTokens — but the rules, state, and UI are real.
     static func seedDemoStateIfRequested() {
         guard seedDemoState else { return }
+        if BlockStore.shared.loadError != nil {
+            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.blocks)
+            BlockStore.shared.reload()
+        }
 
         if let session = AdHocMonitoring.session { AdHocMonitoring.finish(id: session.id) }
         DebugSimulator.resetAllRuntime()
@@ -71,6 +75,12 @@ enum TestHarness {
         AppGroupStore.shared.flush()
 
         #if targetEnvironment(simulator)
+        if BlockStatusPresentation.reviewScenario == "unreadable" {
+            BlockingActuator.apply(tokens: BlockResolution.tokens(for: doom, groups: [social]), blockID: doom.id)
+            SharedDefaults.suite.set(Data("unreadable-fixture".utf8), forKey: SharedDefaults.Keys.blocks)
+            BlockStore.shared.reload()
+            return
+        }
         if BlockStatusPresentation.reviewScenario != nil {
             // Review screenshots use a separate presentation fixture, not fabricated
             // Screen Time authorization or enforcement. Keep the usage editor editable.
@@ -80,9 +90,10 @@ enum TestHarness {
                 BlockStore.shared.flush()
             }
             if let scenario = BlockStatusPresentation.reviewScenario,
-               ["adhoc-error", "adhoc-release-wait"].contains(scenario) {
+               ["adhoc-error", "adhoc-release-wait", "adhoc-pending"].contains(scenario) {
                 // Empty-token fixture tests presentation only, not effective shielding.
-                let item = AdHocSession(group: social, startedAt: Date(), endsAt: Date().addingTimeInterval(1800))
+                var item = AdHocSession(group: social, startedAt: Date(), endsAt: Date().addingTimeInterval(1800))
+                if scenario == "adhoc-pending" { item.registered = false }
                 try? AdHocMonitoring.save(item)
                 if scenario == "adhoc-error" {
                     SharedDefaults.suite.set(
@@ -177,7 +188,7 @@ enum TestHarness {
         AppGroupStore.shared.flush()
 
         let resolvedBlock = BlockResolution.loadBlock(id: b.id)
-        let groupsLoaded = BlockResolution.loadGroups().contains { $0.id == g.id }
+        let groupsLoaded = BlockResolution.loadGroups()?.contains { $0.id == g.id } == true
         let ok = resolvedBlock?.appGroupIDs == [g.id] && groupsLoaded
 
         BlockStore.shared.delete(id: b.id)

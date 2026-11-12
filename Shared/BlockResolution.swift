@@ -50,23 +50,24 @@ enum BlockResolution {
 
     // MARK: - Shared-store loaders (used by app + extension)
 
-    static func loadGroups() -> [AppGroup] {
+    static func loadGroups() -> [AppGroup]? {
         guard let data = SharedDefaults.suite.data(forKey: SharedDefaults.Keys.groups) else { return [] }
-        return (try? JSONDecoder().decode([AppGroup].self, from: data)) ?? []
+        return try? JSONDecoder().decode([AppGroup].self, from: data)
     }
 
-    static func loadBlocks() -> [BlockRule] {
+    static func loadBlocks() -> [BlockRule]? {
         guard let data = SharedDefaults.suite.data(forKey: SharedDefaults.Keys.blocks) else { return [] }
-        return (try? JSONDecoder().decode([BlockRule].self, from: data)) ?? []
+        return try? JSONDecoder().decode([BlockRule].self, from: data)
     }
 
     static func loadBlock(id: UUID) -> BlockRule? {
-        loadBlocks().first(where: { $0.id == id })
+        loadBlocks()?.first(where: { $0.id == id })
     }
 
     /// Tokens for a block id, resolved against the persisted groups.
     static func tokens(forBlockID id: UUID) -> Tokens? {
-        guard let block = loadBlock(id: id) else { return nil }
-        return tokens(for: block, groups: loadGroups())
+        guard let block = loadBlock(id: id), let groups = loadGroups(),
+              Set(block.appGroupIDs).isSubset(of: Set(groups.map(\.id))) else { return nil }
+        return tokens(for: block, groups: groups)
     }
 }

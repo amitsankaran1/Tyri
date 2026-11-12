@@ -2,8 +2,9 @@ import Foundation
 enum SharedDefaults {static let name="schedule-state-\(UUID())";static let suite=UserDefaults(suiteName:name)!;enum Keys {
  static func running(blockID:UUID)->String{"r.\(blockID)"};static func scheduleWindowStart(blockID:UUID)->String{"s.\(blockID)"};static func scheduleReleasedUntil(blockID:UUID)->String{"e.\(blockID)"}
 }}
-struct BlockRule {enum Kind{case schedule,tag};let id=UUID();var type:Kind = .schedule;var schedule:BlockingSchedule?;var isEnabled=false}
-enum BlockResolution {static var blocks:[UUID:BlockRule]=[:];static func loadBlock(id:UUID)->BlockRule?{blocks[id]};static func loadGroups()->[Int]{[]};static func tokens(for block:BlockRule,groups:[Int])->Set<Int>{[1]}}
+struct QAGroup { var id = UUID() }
+struct BlockRule {var appGroupIDs: Set<UUID> = [];enum Kind{case schedule,tag};let id=UUID();var type:Kind = .schedule;var schedule:BlockingSchedule?;var isEnabled=false}
+enum BlockResolution {static func tokens(forBlockID id:UUID)->Set<Int>?{[1]};static var blocks:[UUID:BlockRule]=[:];static func loadBlock(id:UUID)->BlockRule?{blocks[id]};static func loadGroups()->[QAGroup]?{[]};static func tokens(for block:BlockRule,groups:[QAGroup])->Set<Int>{[1]}}
 enum BlockingActuator {static var shields:Set<UUID>=[];static func apply(tokens:Set<Int>,blockID:UUID){shields.insert(blockID)};static func clearShields(blockID:UUID){shields.remove(blockID)}}
 enum BreakMonitoring {static var breaks:Set<UUID>=[];static var resets=0;static func resetAllowance(blockID:UUID){breaks.remove(blockID);resets+=1};static func isOnBreak(blockID:UUID)->Bool{breaks.contains(blockID)}}
 @main struct Tests {

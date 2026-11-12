@@ -3,7 +3,7 @@ import FamilyControls
 
 /// Presentation only: never changes a block's enforcement or usage budget.
 struct BlockStatusPresentation {
-    enum State { case blocking, tracking, paused, off, setup, unavailable }
+    enum State { case blocking, tracking, paused, off, setup, unavailable, checking }
     let state: State
     let detail: String
     var end: Date? = nil
@@ -21,6 +21,7 @@ struct BlockStatusPresentation {
         case .off: return "Blocking off"
         case .setup: return "Screen Time access needed"
         case .unavailable: return "Blocking needs attention"
+        case .checking: return "Waiting for confirmation"
         }
     }
     var color: Color {
@@ -28,7 +29,7 @@ struct BlockStatusPresentation {
         case .blocking: return .red
         case .tracking: return .blue
         case .paused: return .orange
-        case .off, .setup, .unavailable: return .secondary
+        case .off, .setup, .unavailable, .checking: return .secondary
         }
     }
     var icon: String {
@@ -38,6 +39,7 @@ struct BlockStatusPresentation {
         case .paused: return "pause.fill"
         case .off: return "lock.open"
         case .setup, .unavailable: return "exclamationmark.circle"
+        case .checking: return "hourglass"
         }
     }
 
@@ -56,9 +58,6 @@ struct BlockStatusPresentation {
         #endif
         guard canDisplayActivity else {
             return Self(state: .setup, detail: "Allow access in Settings to start this block.")
-        }
-        if ForegroundRecovery.shared.isChecking {
-            return Self(state: .unavailable, detail: "Checking saved blocks with Screen Time…")
         }
         if ScreenTimeManager.shared.isBlockActive(block),
            let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldError(blockID: block.id)) {
@@ -92,6 +91,9 @@ struct BlockStatusPresentation {
         }
         if block.type == .timer {
             guard ForegroundRecovery.shared.registeredUsageIDs.contains(block.id) else {
+                if ForegroundRecovery.shared.isChecking || !ForegroundRecovery.shared.hasChecked {
+                    return Self(state: .checking, detail: "Checking usage tracking with Screen Time…")
+                }
                 return Self(state: .unavailable, detail: "Open this block to check its app lists and save to retry.")
             }
             return Self(state: .tracking, detail: "Counts usage toward your next pause.", usedMinutes: UsageProgress.reported(blockID: block.id), limitMinutes: block.usageLimitMinutes)
@@ -185,14 +187,14 @@ struct BlockStatusCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(status.title, systemImage: status.icon)
-                .font(.title2.bold()).foregroundStyle(status.color)
+                .font(.title2.bold()).foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("focus-status-title")
             Text(status.detail).font(.subheadline).foregroundStyle(.secondary)
             if let end = status.end, status.state == .paused {
-                HStack(spacing: 4) {
-                    Text("Resumes in")
-                    Text(end, style: .timer).monospacedDigit()
-                }.font(.subheadline.weight(.medium))
+                Text("Resumes in \(end, style: .timer)")
+                    .monospacedDigit().font(.subheadline.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

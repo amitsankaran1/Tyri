@@ -62,6 +62,7 @@ struct BlockingSchedule: Codable, Equatable, Hashable {
 
     /// Short human label like "Mon–Fri 9:00–17:00".
     var summary: String {
+        if startMinutesFromMidnight == endMinutesFromMidnight { return "\(weekdaySummary) · All day" }
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "H:mm"
         let startDate = Calendar.current.date(from: DateComponents(hour: startHour, minute: startMinute)) ?? Date()

@@ -2,6 +2,7 @@ import Foundation
 @MainActor final class ForegroundRecovery {
  static let shared=ForegroundRecovery()
  var isChecking=false
+ var hasChecked=true
  var registeredUsageIDs:Set<UUID>=[]
 }
 struct Schedule {func activeWindow()->DateInterval?{nil};var summary="Schedule"}
@@ -22,7 +23,13 @@ enum BlockingEndDescription {static func detail(timedEnd:Date?,manual:Bool,tag:B
   func check(_ yes:Bool,_ name:String){precondition(yes,name);n+=1}
   check(BlockStatusPresentation.current(for:b).state == .tracking,"healthy timer remains tracking")
   ForegroundRecovery.shared.isChecking=true
-  check(BlockStatusPresentation.current(for:b).state == .unavailable,"pending recovery must not claim tracking")
+  check(BlockStatusPresentation.current(for:b).state == .tracking,"routine observation retains a healthy confirmed timer")
+  ForegroundRecovery.shared.registeredUsageIDs=[]
+  check(BlockStatusPresentation.current(for:b).state == .checking,"initial observation is pending rather than a failure")
+  ForegroundRecovery.shared.registeredUsageIDs=[b.id]
+  ScreenTimeManager.shared.active=true
+  check(BlockStatusPresentation.current(for:b).state == .blocking,"routine observation preserves active blocking presentation")
+  ScreenTimeManager.shared.active=false
   ForegroundRecovery.shared.isChecking=false
   ScreenTimeManager.shared.active=true
   for key in [SharedDefaults.Keys.shieldError(blockID:b.id),SharedDefaults.Keys.usageLockError(blockID:b.id),SharedDefaults.Keys.usageError(blockID:b.id)] {

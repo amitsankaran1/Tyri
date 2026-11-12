@@ -74,7 +74,7 @@ enum Probe {
     }
 }
 extension SharedDefaults.Keys { static let migratedToBlocksV2 = "migration" }
-extension BlockResolution { static func loadBlocks() -> [BlockRule] { Array(blocks.values) } }
+extension BlockResolution { static var unreadable = false; static func loadBlocks() -> [BlockRule]? { unreadable ? nil : Array(blocks.values) } }
 extension BlockingSchedule {
     func deviceActivitySchedule() -> DeviceActivitySchedule {
         DeviceActivitySchedule(intervalStart: DateComponents(hour: 0), intervalEnd: DateComponents(hour: 23), repeats: true)
@@ -234,10 +234,22 @@ extension BlockingSchedule {
         recovery.setActive(true)
         try await wait { !recovery.isChecking }
         let retained = UsageMonitoring.usageActivityName(for: queued)
+        precondition(recovery.hasChecked && recovery.registeredUsageIDs.contains(queued))
+        recovery.requestAccepted()
+        precondition(recovery.registeredUsageIDs.contains(queued), "Unrelated Save discarded a healthy presentation")
         recovery.request()
         try await wait { !recovery.isChecking }
         precondition(UsageMonitoring.usageActivityName(for: queued) == retained,
                      "Relaunch recovery reset a healthy allowance")
+        recovery.setActive(false)
+        BlockResolution.blocks[queued]!.usageLimitMinutes = 7
+        recovery.requestAccepted()
+        try await wait {
+            DeviceActivityCenter.events[UsageMonitoring.usageActivityName(for: queued)]?[UsageMonitoring.usageEventName]?.threshold.minute == 7 && !recovery.isChecking
+        }
+        recovery.setActive(true)
+        try await wait { !recovery.isChecking }
+        print("PASS: Save retains healthy presentation and finishes even when accepted while inactive")
         print("PASS: accepted Save completes after Home; no synthetic progress; healthy owner retained")
         for expires in [false, true] {
             let breakID = UUID()
@@ -378,6 +390,17 @@ extension BlockingSchedule {
         precondition(SchedulingManager.shared.foregroundActive)
         for _ in 0..<10 { try await Task.sleep(nanoseconds: 10_000_000) }
         precondition(UIApplication.shared.assertions.isEmpty, "Background assertion leaked after completion/expiration")
+        let emergencyOwner = UUID()
+        State.shields.insert(emergencyOwner)
+        BlockingActuator.pendingClear = emergencyOwner
+        BlockResolution.unreadable = true
+        BlockStore.shared.loadError = "Unreadable rules"
+        recovery.request()
+        try await wait { !State.shields.contains(emergencyOwner) }
+        precondition(BlockingActuator.pendingClear == nil, "Unreadable data prevented replay of an accepted emergency clear")
+        BlockResolution.unreadable = false
+        BlockStore.shared.loadError = nil
+        print("PASS: persisted emergency clear replays despite unreadable rules")
         print("PASS: background assertion expires, stops recovery and ends exactly once")
         print("PASS: background cancels pending recovery/rerun and activation resumes")
         print("PASS: request during final observation queues a fresh usage-limit registration")
