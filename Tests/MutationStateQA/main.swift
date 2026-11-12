@@ -4,14 +4,14 @@ struct Schedule {var active=true;func activeWindow()->Int?{active ? 1:nil}}
 struct BlockRule {enum Kind{case timer,schedule,tag};var id=UUID();var type:Kind = .timer;var appGroupIDs:[UUID]=[];var isEnabled=false;var schedule:Schedule?}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-mutation-\(UUID())")!;enum Keys{static func running(blockID:UUID)->String{"running.\(blockID)"};static func usageLockEnd(blockID:UUID)->String{"lock.\(blockID)"};static func scheduleReleasedUntil(blockID:UUID)->String{"release.\(blockID)"}}}
 class BlockStore {
- static let shared=BlockStore();var blocks:[BlockRule]=[],persisted:[BlockRule]=[]
+ static let shared=BlockStore();var loadError: String?;var blocks:[BlockRule]=[],persisted:[BlockRule]=[]
  func block(id:UUID)->BlockRule?{blocks.first{$0.id==id}}
  func setEnabled(id:UUID,enabled:Bool){if var b=block(id:id){b.isEnabled=enabled;update(b)}}
  func update(_ b:BlockRule){blocks.removeAll{$0.id==b.id};blocks.append(b)}
  func delete(id:UUID){blocks.removeAll{$0.id==id}}
  func flush(){persisted=blocks}
 }
-class GroupStore {func delete(id:UUID){};func flush(){}}
+class GroupStore {var loadError: String?;var deleted: Set<UUID> = [];func delete(id:UUID){deleted.insert(id)};func flush(){}}
 class ScreenTimeManager {static let shared=ScreenTimeManager();var cleared: Set<UUID> = [];func clearBlockShield(id:UUID){cleared.insert(id)}}
 enum ScheduleEnforcement {static func releaseCurrentWindow(block:BlockRule){}}
 enum UsageMonitoring {static func stopLockout(for id:UUID){SharedDefaults.suite.removeObject(forKey:SharedDefaults.Keys.usageLockEnd(blockID:id))}}
@@ -36,6 +36,15 @@ class BlockEditor {var blockID=UUID();var showActiveDeleteAlert=false;let blockS
   check(UsageLimitManager.shared.applied.last?.appGroupIDs == [remaining],"SM-02 deleting one list replaces monitor with remaining selection")
   check(BlockStore.shared.persisted.first?.appGroupIDs == [remaining],"SM-02 deletion publishes detached references synchronously")
   g.groupID=remaining;g.deleteGroup();check(!UsageLimitManager.shared.monitors.contains(b.id),"SM-02 deleting last list stops old usage monitor")
+  let unreadableEditor = GroupEditor()
+  BlockStore.shared.loadError = "Unreadable rules"
+  BlockStore.shared.blocks = []
+  unreadableEditor.deleteGroup()
+  check(!unreadableEditor.groupStore.deleted.contains(unreadableEditor.groupID), "Unreadable rules cannot delete a list whose active references are unknown")
+  BlockStore.shared.loadError = nil
+  unreadableEditor.groupStore.loadError = "Unreadable lists"
+  unreadableEditor.deleteGroup()
+  check(!unreadableEditor.groupStore.deleted.contains(unreadableEditor.groupID), "Unreadable lists cannot be deleted from a stale editor")
   let e=BlockEditor();b=BlockRule(id:e.blockID,type:.tag);BlockStore.shared.blocks=[b];BlockStore.shared.flush();e.deleteBlock()
   check(!SchedulingManager.shared.deletionSawPersistedRule,"SM-02 rule deletion precedes monitor-stop callbacks")
   let timer=BlockRule(appGroupIDs:[remaining],isEnabled:true);BlockStore.shared.blocks=[timer];BlockStore.shared.flush();UsageLimitManager.shared.monitors=[]

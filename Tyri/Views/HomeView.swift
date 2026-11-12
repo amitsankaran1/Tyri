@@ -44,6 +44,7 @@ struct HomeView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedID) {
+                RecoveryStatusSection()
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         BlockStatusCard(status: overview)

@@ -9,7 +9,7 @@ import XCTest
         app = XCUIApplication()
     }
     private func launch(_ scenario: String? = nil, largeText: Bool = false) {
-        app.launchEnvironment = ["BLOCK_SEED_DEMO_STATE": "1", "BLOCK_RUN_TEST_HARNESS": "1"]
+        app.launchEnvironment = ["BLOCK_SEED_DEMO_STATE": "1", "BLOCK_RUN_TEST_HARNESS": scenario == "unreadable" ? "0" : "1"]
         if let scenario { app.launchEnvironment["TYRI_UI_REVIEW"] = scenario }
         if largeText { app.launchArguments = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launch()
@@ -37,9 +37,10 @@ import XCTest
         let disconnect = app.buttons["Disconnect tag"].firstMatch
         XCTAssertTrue(disconnect.isEnabled)
         disconnect.tap()
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.sheets["Disconnect your NFC tag?"].waitForExistence(timeout: 5))
         capture("disconnect-confirmation")
-        app.buttons["Cancel"].tap()
+        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        else { app.otherElements["PopoverDismissRegion"].tap() }
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let debug = app.buttons["Debug menu"]
         scroll(debug); debug.tap()
@@ -55,16 +56,31 @@ import XCTest
     }
     func testUnreadableDataKeepsSettingsAndEmergencyAccessReachable() {
         launch("unreadable")
+        capture("unreadable-data-navigation-fixture")
         XCTAssertTrue(app.buttons["Settings"].firstMatch.isHittable)
         XCTAssertFalse(app.buttons["Create your first block"].exists)
         capture("unreadable-data-focus-fixture")
+        app.buttons["Lists"].firstMatch.tap()
+        XCTAssertFalse(app.buttons["Add list"].isEnabled)
+        let list = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Social media")).firstMatch
+        scroll(list); list.tap()
+        XCTAssertTrue(app.staticTexts["list-data-unavailable"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Save"].isEnabled)
+        let delete = app.buttons["Delete List"]
+        scroll(delete)
+        XCTAssertFalse(delete.isEnabled)
+        capture("unreadable-rules-list-mutations-disabled-fixture")
+        app.buttons["Cancel"].tap()
+        app.buttons["Focus"].firstMatch.tap()
         app.buttons["Settings"].firstMatch.tap()
         let challenge = app.buttons["Start typing challenge"]
         scroll(challenge); challenge.tap()
         XCTAssertTrue(app.navigationBars["Emergency Access"].waitForExistence(timeout: 5))
         let response = app.textViews["Type the passage"]
         response.tap(); response.typeText("X am")
-        XCTAssertTrue(app.staticTexts["Check character 1: expected ‘i’, found ‘x’."].exists)
+        let mismatch = app.staticTexts["Check character 1: expected ‘i’, found ‘x’."]
+        scroll(mismatch)
+        XCTAssertTrue(mismatch.exists)
         XCTAssertFalse(app.buttons["Disable blocking"].isEnabled)
         capture("emergency-access-mismatch-fixture")
     }

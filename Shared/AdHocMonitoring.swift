@@ -103,7 +103,7 @@ enum AdHocMonitoring {
                     guard let reservation = EnforcementTransaction.beginEffect() else { return }
                     guard session?.id == item.id else { reservation.finish(); return }
                     var cal = Calendar(identifier: .gregorian)
-            cal.timeZone = TimeZone(secondsFromGMT: 0)!
+                    cal.timeZone = TimeZone(secondsFromGMT: 0)!
                     // Preserve the deadline. Short remaining windows use the warning
                     // callback, just like short usage lockouts and breaks.
                     let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
