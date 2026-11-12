@@ -117,7 +117,7 @@ struct BlockStatusPresentation {
             if scenario == "locked" {
                 return Self(state: .blocking, detail: BlockingEndDescription.detail(timedEnd: reviewStart.addingTimeInterval(10680), manual: false, tag: false), end: reviewStart.addingTimeInterval(10680), lockStart: reviewStart.addingTimeInterval(-120), lockEnd: reviewStart.addingTimeInterval(10680))
             }
-            return Self(state: .tracking, detail: "Counts usage toward your next pause.", usedMinutes: 9, limitMinutes: 30)
+            return Self(state: .tracking, detail: "Counts usage toward your next pause.", usedMinutes: scenario == "tracking-pending" ? nil : 9, limitMinutes: 30)
         }
         if block.type == .schedule {
             if scenario == "blocking" || scenario == "mixed" {
@@ -152,7 +152,7 @@ struct UsageProgressView: View {
                 Text("Last reported by iOS · updates about every \(UsageProgress.step(for: limit)) min")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
-                Text("\(limit) min allowance · Usage so far unavailable")
+                Text("\(limit) min allowance · No usage update from iOS yet")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

@@ -53,7 +53,7 @@ enum UsageMonitoring {
 
     private static func publishGeneration(_ name: String, blockID: UUID) {
         SharedDefaults.suite.set(String(name.dropFirst("usage.\(blockID.uuidString).".count)), forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID))
-        UsageProgress.record(0, blockID: blockID, reset: true)
+        SharedDefaults.suite.removeObject(forKey: UsageProgress.key(blockID))
     }
 
     static func acceptRegistration(_ name: String, for block: BlockRule, groups: [AppGroup]) -> Bool {
@@ -128,55 +128,73 @@ enum UsageMonitoring {
         guard let transition = EnforcementTransaction.begin() else { return false }
         defer { transition.finish() }
 
-        guard let event = usageEvent(for: block, groups: groups) else { return false }
-        let center = DeviceActivityCenter()
-        let oldActivities = center.activities.filter { $0.rawValue == "usage.\(block.id.uuidString)" || $0.rawValue.hasPrefix("usage.\(block.id.uuidString).") }
-        guard let context = registrationContext(for: block, groups: groups),
-              let ticket = MonitorRegistration.reserve("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context) else { return false }
-        // Each allowance gets a new identity: a delivered threshold from an old
-        // allowance cannot consume the next one, and iOS gets a fresh event counter.
-        let activity = DeviceActivityName(rawValue: ticket.name)
-        // A replacement needs a slot too. At the activity ceiling, retaining the
-        // old generation makes every retry fail forever. This call intentionally
-        // starts a fresh allowance; retire the old one only when space is needed.
-        if center.activities.count >= 20 && !oldActivities.isEmpty {
-            center.stopMonitoring(oldActivities)
-        }
-        do {
-            var reportsProgress = true
-            do {
-                try center.startMonitoring(activity, during: allDaySchedule, events: progressEvents(for: block, limitEvent: event))
-            } catch {
-                // Progress is optional: never lose enforcement because extra
-                // reporting events could not be registered on this device.
-                try center.startMonitoring(activity, during: allDaySchedule, events: [usageEventName: event])
-                reportsProgress = false
+        guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) == nil,
+              let event = usageEvent(for: block, groups: groups) else { return false }
+        guard let context = registrationContext(for: block, groups: groups) else { return false }
+        let previous = MonitorRegistration.load("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context)
+        let oldNames = [previous?.confirmed?.name, previous?.pending?.name].compactMap { $0 }
+        guard let ticket = MonitorRegistration.reserve("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context) else { return false }
+        let result = MonitorResult()
+        EnforcementTransaction.afterUnlock(key: ticket.name) {
+            guard EnforcementTransaction.effectsAreEnabled else { return }
+            let center = DeviceActivityCenter()
+            let oldActivities = oldNames.map { DeviceActivityName(rawValue: $0) }
+            // Each allowance gets a new identity: a delivered threshold from an old
+            // allowance cannot consume the next one, and iOS gets a fresh event counter.
+            let activity = DeviceActivityName(rawValue: ticket.name)
+            // A replacement needs a slot too. At the activity ceiling, retaining the
+            // old generation makes every retry fail forever. This call intentionally
+            // starts a fresh allowance; retire the old one only when space is needed.
+            if center.activities.count >= 20 && !oldActivities.isEmpty {
+                center.stopMonitoring(oldActivities)
             }
-            let accepted = finishRegistration(ticket, context: context, succeeded: true)
-            guard accepted == .promoted || accepted == .alreadyAccepted else { center.stopMonitoring([activity]); return false }
-            if !reportsProgress && accepted == .promoted { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
-            center.stopMonitoring(oldActivities)
-            EnforcementDiagnostics.record("registration", blockID: block.id, detail: "Registered allowance; progress events: \(reportsProgress)")
-            log.notice("Registered allowance \(activity.rawValue, privacy: .public)")
-            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: block.id))
-            return true
-        } catch {
-            _ = finishRegistration(ticket, context: context, succeeded: false)
-            SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",
-                                     forKey: SharedDefaults.Keys.usageError(blockID: block.id))
-            EnforcementDiagnostics.record("registration", blockID: block.id, detail: "FAILED: \(error.localizedDescription)")
-            log.error("Allowance registration failed: \(error.localizedDescription, privacy: .public)")
-            print("❌ startUsageMonitor failed for \(block.id): \(error)")
-            return false
+            do {
+                var reportsProgress = true
+                do {
+                    try center.startMonitoring(activity, during: allDaySchedule, events: progressEvents(for: block, limitEvent: event))
+                } catch {
+                    guard EnforcementTransaction.effectsAreEnabled else { throw error }
+                    // Progress is optional: never lose enforcement because extra
+                    // reporting events could not be registered on this device.
+                    try center.startMonitoring(activity, during: allDaySchedule, events: [usageEventName: event])
+                    reportsProgress = false
+                }
+                guard let commit = EnforcementTransaction.beginEffect() else { return }
+                let accepted = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: true)
+                guard accepted == .promoted || accepted == .alreadyAccepted else { commit.finish(); center.stopMonitoring([activity]); return }
+                if !reportsProgress && accepted == .promoted { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
+                EnforcementDiagnostics.record("registration", blockID: block.id, detail: "Registered allowance; progress events: \(reportsProgress)")
+                log.notice("Registered allowance \(activity.rawValue, privacy: .public)")
+                SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: block.id))
+                result.succeeded = true
+                commit.finish()
+                center.stopMonitoring(oldActivities)
+            } catch {
+                guard let commit = EnforcementTransaction.beginEffect() else { return }
+                defer { commit.finish() }
+                let completion = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: false)
+                guard completion == .failed else { return }
+                SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",
+                                         forKey: SharedDefaults.Keys.usageError(blockID: block.id))
+                EnforcementDiagnostics.record("registration", blockID: block.id, detail: "FAILED: \(error.localizedDescription)")
+                log.error("Allowance registration failed: \(error.localizedDescription, privacy: .public)")
+                print("❌ startUsageMonitor failed for \(block.id): \(error)")
+                result.error = error
+            }
         }
+        transition.finish()
+        return result.succeeded
+    }
+
+    private static func currentUsageContext(blockID: UUID) -> String? {
+        guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) == nil,
+              let block = BlockResolution.loadBlock(id: blockID) else { return nil }
+        return registrationContext(for: block, groups: BlockResolution.loadGroups())
     }
 
     /// Convenience used by the extension, which loads from the shared store.
     @discardableResult
     static func startUsageMonitor(forBlockID id: UUID) -> Bool {
-        guard let transition = EnforcementTransaction.begin() else { return false }
-        defer { transition.finish() }
-
         guard let block = BlockResolution.loadBlock(id: id) else { return false }
         return startUsageMonitor(for: block, groups: BlockResolution.loadGroups())
     }
@@ -186,10 +204,15 @@ enum UsageMonitoring {
         defer { transition.finish() }
 
         MonitorRegistration.invalidate("usage.\(blockID.uuidString)", legacyName: legacyUsageName(blockID))
-        let center = DeviceActivityCenter()
-        center.stopMonitoring(center.activities.filter {
-            $0.rawValue == "usage.\(blockID.uuidString)" || $0.rawValue.hasPrefix("usage.\(blockID.uuidString).")
-        })
+        EnforcementTransaction.afterUnlock(key: "stopUsage.\(blockID.uuidString)") {
+            let center = DeviceActivityCenter()
+            let observed = Set(center.activities.map(\.rawValue))
+            guard let lease = EnforcementTransaction.beginEffect() else { return }
+            let retired = MonitorRegistration.retirementNames(observed: observed)
+                .filter { $0 == "usage.\(blockID.uuidString)" || $0.hasPrefix("usage.\(blockID.uuidString).") }
+            lease.finish()
+            center.stopMonitoring(retired.map { DeviceActivityName(rawValue: $0) })
+        }
     }
 
     /// True if the all-day usage monitor is currently registered for this block.
@@ -238,15 +261,31 @@ enum UsageMonitoring {
         )
         let base = "lock.\(blockID.uuidString)"
         guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: lockContext(blockID: blockID, end: end)) else { return }
-        do {
-            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
-            _ = MonitorRegistration.finish(ticket, context: lockContext(blockID: blockID, end: end), succeeded: true)
-            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
-        } catch {
-            _ = MonitorRegistration.finish(ticket, context: lockContext(blockID: blockID, end: end), succeeded: false)
-            SharedDefaults.suite.set("Blocking is on, but its automatic end couldn't be registered. Open Tyri to retry.",
-                                     forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
-            print("❌ startLockout failed for \(blockID): \(error)")
+        EnforcementTransaction.afterUnlock(key: ticket.name) {
+            guard EnforcementTransaction.effectsAreEnabled else { return }
+            let outcome = MonitorResult()
+            do {
+                try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+                outcome.succeeded = true
+            } catch { outcome.error = error }
+            guard let lease = EnforcementTransaction.beginEffect() else { return }
+            defer { lease.finish() }
+            let currentEnd = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date
+            let current = currentEnd.flatMap { value in
+                BlockResolution.loadBlock(id: blockID)?.type == .timer ? lockContext(blockID: blockID, end: value) : nil
+            }
+            let result = MonitorRegistration.finish(ticket, context: current, succeeded: outcome.succeeded)
+            if result == .promoted || result == .alreadyAccepted {
+                SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
+            } else if result == .failed {
+                SharedDefaults.suite.set("Blocking is on, but its automatic end couldn't be registered. Open Tyri to retry.",
+                                         forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
+            }
+            if result == .obsolete {
+                EnforcementTransaction.afterUnlock(key: "stop." + ticket.name) {
+                    DeviceActivityCenter().stopMonitoring([DeviceActivityName(rawValue: ticket.name)])
+                }
+            }
         }
     }
 
@@ -258,8 +297,14 @@ enum UsageMonitoring {
         guard let block = BlockResolution.loadBlock(id: blockID), block.type == .timer,
               let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date else { return }
         if end > now {
-            if !DeviceActivityCenter().activities.contains(lockActivityName(for: blockID)) {
-                registerLockout(blockID: blockID, end: end, now: now)
+            let activity = lockActivityName(for: blockID)
+            EnforcementTransaction.afterUnlock(key: "repairLock.\(blockID)") {
+                guard !DeviceActivityCenter().activities.contains(activity),
+                      let lease = EnforcementTransaction.beginEffect() else { return }
+                defer { lease.finish() }
+                guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date == end,
+                      end > Date() else { return }
+                registerLockout(blockID: blockID, end: end, now: Date())
             }
             BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()), blockID: blockID)
             return
@@ -272,7 +317,13 @@ enum UsageMonitoring {
         } else {
             BlockingActuator.end(blockID: blockID)
         }
-        if !isUsageMonitorActive(for: blockID) {
+        let generation = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID))
+        EnforcementTransaction.afterUnlock(key: "rearm.\(blockID)") {
+            guard !isUsageMonitorActive(for: blockID), let rearm = EnforcementTransaction.beginEffect() else { return }
+            defer { rearm.finish() }
+            guard SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) == nil,
+                  SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID)) == generation,
+                  MonitorRegistration.pending("usage.\(blockID.uuidString)") == nil else { return }
             startUsageMonitor(forBlockID: blockID)
         }
     }
@@ -286,7 +337,11 @@ enum UsageMonitoring {
         MonitorRegistration.invalidate("lock.\(blockID.uuidString)", legacyName: "lock.\(blockID.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: blockID))
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID))
-        if stopMonitoring { DeviceActivityCenter().stopMonitoring([activity]) }
+        if stopMonitoring {
+            EnforcementTransaction.afterUnlock(key: "stop." + activity.rawValue) {
+                DeviceActivityCenter().stopMonitoring([activity])
+            }
+        }
     }
 
     static func lockContext(blockID: UUID, end: Date) -> String {

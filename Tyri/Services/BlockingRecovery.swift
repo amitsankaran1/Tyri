@@ -7,7 +7,7 @@ enum BlockingRecovery {
     @discardableResult
     static func retry(blockID: UUID) -> Bool {
         guard let transition = EnforcementTransaction.begin() else { return false }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
         let screenTime = ScreenTimeManager.shared
         screenTime.checkAuthorizationStatus()
         guard screenTime.authorizationStatus == .approved,

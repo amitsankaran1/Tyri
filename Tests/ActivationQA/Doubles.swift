@@ -57,7 +57,7 @@ class Probe {
  let blockStore=Store(),screenTimeManager=Screen(),usageLimitManager=Usage(),schedulingManager=Scheduling()
  var screenTime:Screen{screenTimeManager};var usage:Usage{usageLimitManager};var scheduling:Scheduling{schedulingManager};let adHoc=AdHoc();let breaks=Breaks()
  var blockID:UUID{blockStore.value.id}
- var hasLoaded=true;var newBlock:BlockRule?=nil;var type:BlockType = .timer;var schedule:Int?=nil;var usageLimitMinutes=5,usageLockMinutes=5,cooldownMinutes=5,breakMinutes=0;var groupIDs:Set<UUID>=[];var isEnabled=true;var name="Timer";var finished=false
+ var hasLoaded=true;var newBlock:BlockRule?=nil;var type:BlockType = .timer;var schedule:Int?=nil;var usageLimitMinutes=5,usageLockMinutes=5,cooldownMinutes=5,breakMinutes=0;var groupIDs:Set<UUID>=[UUID()];var isEnabled=true;var name="Timer";var finished=false
  func finish(){finished=true}
 }
 @main struct Tests {
@@ -104,3 +104,7 @@ class Probe {
   print("\(starts==p.usageLimitManager.starts ? "PASS" : "FAIL"): foreground preserves a healthy monitor")
  }
 }
+
+extension ForegroundRecovery { func finish(_ lease: EnforcementTransaction.Lease) { lease.finish() }; func requestAccepted() { Task { @MainActor in self.request() } } }
+
+extension Probe { var canSave: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !groupIDs.isEmpty } }

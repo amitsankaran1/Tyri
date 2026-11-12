@@ -134,6 +134,8 @@ enum ScheduleEnforcement {
   let secondEnd = SharedDefaults.suite.object(forKey: key) as! Date
   monitor.intervalDidEnd(for: lock)
   check(State.shield && SharedDefaults.suite.object(forKey: key) as? Date == secondEnd, "second lockout cannot end early")
+  UsageMonitoring.stopLockout(for: id)
+  UsageMonitoring.startUsageMonitor(forBlockID: id)
   DeviceActivityCenter.fail = true
   let beforeFailedReplacement = UsageMonitoring.usageActivityName(for: id)
   check(!UsageMonitoring.startUsageMonitor(forBlockID: id), "failed rearm is reported")

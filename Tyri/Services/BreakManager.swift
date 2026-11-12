@@ -21,9 +21,11 @@ class BreakManager: ObservableObject {
         let endsAt: Date
     }
 
+    @Published private(set) var isStarting = false
     @Published var lastError: String?
     @Published private(set) var activeBreak: ActiveBreak?
 
+    private var foregroundActive = true
     private var tickTimer: Timer?
     private var defaults: UserDefaults { SharedDefaults.suite }
 
@@ -38,7 +40,7 @@ class BreakManager: ObservableObject {
     /// Can this block offer its "Take a break" action right now? (Type and
     /// activity gating is the caller's job — this covers the break rules.)
     func isBreakAvailable(for block: BlockRule) -> Bool {
-        block.type != .timer
+        !isStarting && block.type != .timer
             && block.breakMinutes > 0
             && !BreakMonitoring.breakUsed(blockID: block.id)
             && !isOnBreak(blockID: block.id)
@@ -56,22 +58,17 @@ class BreakManager: ObservableObject {
     /// Start the block's single per-activation break. No-op if breaks are off,
     /// already used this activation, or another break is running.
     func start(for block: BlockRule) {
-        guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
-
         guard isBreakAvailable(for: block) else { return }
-        guard BreakMonitoring.startBreak(blockID: block.id, minutes: block.breakMinutes) else {
-            lastError = "The automatic re-lock could not be scheduled. Your block is still on. Please try again."
-            return
+        isStarting = true
+        Task {
+            let succeeded = (try? await ForegroundRecovery.shared.command {
+                BreakMonitoring.startBreak(blockID: block.id, minutes: block.breakMinutes)
+            }) ?? false
+            isStarting = false
+            lastError = succeeded ? nil : "The automatic re-lock could not be scheduled. Your block is still on. Please try again."
+            publishPersistedState()
+            SchedulingManager.shared.refresh()
         }
-        lastError = nil
-        guard let endsAt = BreakMonitoring.breakEnd(blockID: block.id) else { return }
-        activeBreak = ActiveBreak(blockID: block.id, endsAt: endsAt)
-        startTickTimer()
-        SchedulingManager.shared.refresh()
-        #if DEBUG
-        DebugLog.shared.log(.actuator, "break start(\(block.breakMinutes)m) block=\(block.id.uuidString.prefix(8)) ends=\(endsAt)")
-        #endif
     }
 
     /// End the active break now and re-lock (if the block is still logically on).
@@ -83,6 +80,8 @@ class BreakManager: ObservableObject {
     /// Drop break state for a block without re-shielding — the block itself is
     /// being released (tag toggle-off, cooldown release, delete, emergency).
     func cancelIfActive(blockID: UUID) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { ForegroundRecovery.shared.finish(transition) }
         // Shared state may exist even when local state doesn't (e.g. app relaunch
         // raced the restore) — always reset it.
         BreakMonitoring.resetAllowance(blockID: blockID)
@@ -117,7 +116,15 @@ class BreakManager: ObservableObject {
 
     // MARK: - Private
 
+    func setForegroundActive(_ active: Bool) {
+        foregroundActive = active
+        stopTickTimer()
+        if active { publishPersistedState() }
+    }
+
     private func finish(blockID: UUID, reapply: Bool) {
+        guard let transition = EnforcementTransaction.begin() else { return }
+        defer { ForegroundRecovery.shared.finish(transition) }
         BreakMonitoring.endBreak(blockID: blockID, reapply: reapply)
         activeBreak = nil
         stopTickTimer()
@@ -128,6 +135,7 @@ class BreakManager: ObservableObject {
     }
 
     private func startTickTimer() {
+        guard foregroundActive else { return }
         tickTimer?.invalidate()
         tickTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in

@@ -15,7 +15,7 @@ UsageProgress.record(4, blockID: id, now: now)
 UsageProgress.record(2, blockID: id, now: now)
 precondition(UsageProgress.reported(blockID: id, now: now) == 4)
 let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
-precondition(UsageProgress.reported(blockID: id, now: tomorrow) == 0)
+precondition(UsageProgress.reported(blockID: id, now: tomorrow) == nil)
 UsageProgress.record(1, blockID: id, now: tomorrow)
 precondition(UsageProgress.reported(blockID: id, now: tomorrow) == 1)
 SharedDefaults.suite.set("second", forKey: SharedDefaults.Keys.usageGeneration(blockID: id))

@@ -65,7 +65,7 @@ class ScreenTimeManager: ObservableObject {
     /// persisted copy the extension reads), then defers to BlockingActuator.
     func applyBlockShield(_ block: BlockRule) {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         guard authorizationStatus == .approved else {
             #if DEBUG
@@ -95,7 +95,7 @@ class ScreenTimeManager: ObservableObject {
     /// orphaned break window can re-lock a block the user already turned off.
     func clearBlockShield(id: UUID) {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         BreakManager.shared.cancelIfActive(blockID: id)
         BlockingActuator.clearShields(blockID: id)
@@ -108,7 +108,7 @@ class ScreenTimeManager: ObservableObject {
     /// state. Scheduled/timer blocks may re-apply at their next interval.
     func disableAllBlocks() {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         if let session = AdHocMonitoring.session { AdHocMonitoring.finish(id: session.id) }
         AdHocManager.shared.refresh()

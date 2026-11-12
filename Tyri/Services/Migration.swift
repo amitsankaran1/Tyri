@@ -20,7 +20,7 @@ enum Migration {
         // must not wait on a foreground worker's interprocess lease.
         guard !SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
         guard let transition = EnforcementTransaction.begin(wait: false) else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
         let suite = SharedDefaults.suite
         guard !suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
 
@@ -86,8 +86,10 @@ enum Migration {
             BlockingActuator.start(blockID: block.id, bypassWeekday: true, setRunningFlag: false, resetBreakAllowance: false)
         }
         for preset in legacy { clearLegacy(presetID: preset.id) }
-        ManagedSettingsStore().clearAllSettings()
-        ManagedSettingsStore(named: ManagedSettingsStore.Name(rawValue: "tagflow.cats")).clearAllSettings()
+        EnforcementTransaction.afterUnlock(key: "legacy-tag-shields") {
+            ManagedSettingsStore().clearAllSettings()
+            ManagedSettingsStore(named: ManagedSettingsStore.Name(rawValue: "tagflow.cats")).clearAllSettings()
+        }
         suite.set(true, forKey: SharedDefaults.Keys.migratedToBlocksV2)
         suite.removeObject(forKey: SharedDefaults.Keys.presets)
         #if DEBUG
@@ -145,8 +147,10 @@ enum Migration {
     /// Best-effort teardown of a legacy preset's runtime state (old key scheme).
     private static func clearLegacy(presetID: UUID) {
         let suite = SharedDefaults.suite
-        ManagedSettingsStore(named: ManagedSettingsStore.Name(rawValue: "preset.\(presetID.uuidString)")).clearAllSettings()
-        ManagedSettingsStore(named: ManagedSettingsStore.Name(rawValue: "preset.\(presetID.uuidString).cats")).clearAllSettings()
+        EnforcementTransaction.afterUnlock(key: "legacy-preset.\(presetID.uuidString)") {
+            ManagedSettingsStore(named: ManagedSettingsStore.Name(rawValue: "preset.\(presetID.uuidString)")).clearAllSettings()
+            ManagedSettingsStore(named: ManagedSettingsStore.Name(rawValue: "preset.\(presetID.uuidString).cats")).clearAllSettings()
+        }
         suite.removeObject(forKey: "running.\(presetID.uuidString)")
         suite.removeObject(forKey: "cooldown.\(presetID.uuidString)")
         suite.removeObject(forKey: "usagelock.\(presetID.uuidString)")

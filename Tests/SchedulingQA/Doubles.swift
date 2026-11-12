@@ -1,6 +1,6 @@
 import Foundation
 protocol ObservableObject {}
-@MainActor final class ForegroundRecovery {
+final class ForegroundRecovery {
     static let shared = ForegroundRecovery()
     func request() {}
 }
@@ -50,29 +50,26 @@ enum ScheduleEnforcement {
         let manager = SchedulingManager.shared
         let first = BlockRule(name: "First")
         let second = BlockRule(name: "Second")
-        DeviceActivityCenter.failNext = true
-        precondition(!manager.applySchedule(for: first))
-        precondition(manager.registrationErrors[first.id] != nil)
-        precondition(manager.applySchedule(for: second))
-        precondition(manager.registrationErrors[first.id] != nil, "Other success must not hide failure")
         precondition(manager.applySchedule(for: first))
-        precondition(manager.registrationErrors[first.id] == nil)
-        DeviceActivityCenter.failNext = true
-        precondition(!manager.applySchedule(for: first))
+        precondition(manager.applySchedule(for: second))
+        precondition(DeviceActivityCenter.starts == 0, "Save must not perform native registration on MainActor")
+        manager.publishRecovery(errors: [first.id: "Unavailable"])
+        precondition(manager.registrationErrors[first.id] != nil)
         manager.removeSchedule(for: first)
         precondition(manager.registrationErrors[first.id] == nil)
-        BlockStore.shared.blocks = [first, second]
-        DeviceActivityCenter.registered = []
         manager.repairMissingSchedules()
-        precondition(DeviceActivityCenter.registered.count == 2)
-        let starts = DeviceActivityCenter.starts
-        manager.repairMissingSchedules()
-        precondition(DeviceActivityCenter.starts == starts, "Healthy schedules must not reset on foreground")
-        for _ in 0..<30 { precondition(manager.applySchedule(for: first)) }
-        precondition(DeviceActivityCenter.registered.count == 2, "Repeated saves leaked retired schedule registrations")
-        for i in 0..<18 { DeviceActivityCenter.registered.insert(DeviceActivityName(rawValue: "other.\(i)")) }
-        precondition(manager.applySchedule(for: first), "Replacement at capacity must reuse its previous owner's slot")
-        precondition(DeviceActivityCenter.registered.count == 20)
-        print("PASS: schedule error/recovery, repeated saves and replacement at 20-activity capacity against production manager")
+        precondition(DeviceActivityCenter.starts == 0, "Repair must use the shared worker")
+        manager.setForegroundActive(true)
+        let timer = manager.refreshTimer!
+        precondition(timer.isValid)
+        manager.setForegroundActive(false)
+        precondition(!timer.isValid && manager.refreshTimer == nil, "Background left the periodic timer active")
+        manager.setForegroundActive(true)
+        precondition(manager.refreshTimer?.isValid == true, "Foreground failed to restart periodic recovery")
+        manager.setForegroundActive(false)
+        print("PASS: actual periodic schedule timer stops on background and restarts on activation")
+        print("PASS: schedule Save/repair dispatch and error publication against production manager")
     }
 }
+
+extension ForegroundRecovery { func finish(_ lease: EnforcementTransaction.Lease) { lease.finish() }; func requestAccepted() { request() } }

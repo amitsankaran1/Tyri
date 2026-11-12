@@ -10,6 +10,7 @@ import CoreNFC
 
 @main
 struct TyriApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var nfcManager = NFCManager.shared
 
     init() {
@@ -19,6 +20,9 @@ struct TyriApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onChange(of: scenePhase) { phase in
+                    ForegroundRecovery.shared.setActive(phase == .active)
+                }
                 .task {
                     _ = AppGroupStore.shared
                     _ = BlockStore.shared

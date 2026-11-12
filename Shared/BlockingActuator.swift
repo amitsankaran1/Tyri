@@ -11,10 +11,195 @@
 //
 
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 import ManagedSettings
 import FamilyControls
 
 enum BlockingActuator {
+
+    private struct Intent: Codable, Equatable {
+        var tokens: BlockResolution.Tokens?
+        var includeCategories = true
+        var revision = UUID()
+        var applied = false
+        var chunks = 1
+        // A newer writer cannot declare success while an older native write is
+        // still able to land. Orphaned operations deliberately keep recovery
+        // retryable after a process dies; safety takes priority over caching.
+        var inFlight: Set<UUID> = []
+        var processOwners: [String: Int32]? = nil
+
+        mutating func retireDeadWriters() {
+            for operation in inFlight {
+                guard let pid = processOwners?[operation.uuidString], kill(pid, 0) == -1, errno == ESRCH else { continue }
+                inFlight.remove(operation)
+                processOwners?.removeValue(forKey: operation.uuidString)
+                applied = false
+            }
+        }
+    }
+    private static let lifecycleMutex = NSLock()
+    private static var effectsEnabled = true
+    private static var activation = UUID()
+    private static var finishedWhileInactive: [UUID: Set<UUID>] = [:]
+    private static var verified: [UUID: (revision: UUID, activation: UUID)] = [:]
+
+    /// App lifecycle only. The monitor extension has its own process and remains
+    /// enabled. Pending intent survives suspension and is retried on foreground.
+    static func setEffectsEnabled(_ enabled: Bool) {
+        lifecycleMutex.lock()
+        if enabled && !effectsEnabled { activation = UUID() }
+        effectsEnabled = enabled
+        lifecycleMutex.unlock()
+    }
+    private static var canApply: Bool {
+        lifecycleMutex.lock(); defer { lifecycleMutex.unlock() }; return effectsEnabled
+    }
+    private static func effectLease() -> EnforcementTransaction.Lease? {
+        // Extension callbacks have no foreground timer to retry a dropped write.
+        // Wait without owning a file lease, and keep lifecycle rejection distinct
+        // from transient contention. Resignation/expiration ends this retry lane.
+        while true {
+            lifecycleMutex.lock()
+            guard effectsEnabled else { lifecycleMutex.unlock(); return nil }
+            let lease = EnforcementTransaction.begin(wait: false)
+            lifecycleMutex.unlock()
+            if let lease { return lease }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+    }
+    private static func deferCompletion(_ operation: UUID, for id: UUID) {
+        lifecycleMutex.lock(); defer { lifecycleMutex.unlock() }
+        finishedWhileInactive[id, default: []].insert(operation)
+    }
+
+    private static func intentKey(_ id: UUID) -> String { "shieldIntent.v1.\(id.uuidString)" }
+    private static func loadIntent(_ id: UUID) -> Intent? {
+        SharedDefaults.suite.data(forKey: intentKey(id)).flatMap { try? JSONDecoder().decode(Intent.self, from: $0) }
+    }
+    private static func saveIntent(_ intent: Intent, _ id: UUID) {
+        guard let data = try? JSONEncoder().encode(intent) else { return }
+        SharedDefaults.suite.set(data, forKey: intentKey(id))
+    }
+    private static func submit(tokens: BlockResolution.Tokens?, blockID: UUID, includeCategories: Bool = true) {
+        guard let lease = EnforcementTransaction.begin() else { return }
+        defer { lease.finish() }
+        let old = loadIntent(blockID)
+        if old?.tokens != tokens || old?.includeCategories != includeCategories || old == nil {
+            // Retain the high-water chunk count until the new intent completes.
+            let count = max(old?.chunks ?? 1,
+                SharedDefaults.suite.integer(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID)),
+                tokens.map { max(1, ($0.apps.count + 49) / 50, ($0.webDomains.count + 49) / 50) } ?? 1)
+            saveIntent(Intent(tokens: tokens, includeCategories: includeCategories,
+                              chunks: min(maxChunksPerBlock, count), inFlight: old?.inFlight ?? [], processOwners: old?.processOwners), blockID)
+        }
+        EnforcementTransaction.afterUnlock(key: intentKey(blockID)) { flushIntent(blockID) }
+    }
+
+    /// Replays tombstones too: expired/deleted owners no longer appear in the
+    /// block/session enumeration, but their deferred clears must still complete.
+    static func replayPending() {
+        guard let lease = EnforcementTransaction.begin(wait: false) else { return }
+        defer { lease.finish() }
+        let prefix = "shieldIntent.v1."
+        lifecycleMutex.lock()
+        let completed = finishedWhileInactive
+        finishedWhileInactive.removeAll()
+        lifecycleMutex.unlock()
+        for (id, operations) in completed {
+            if var intent = loadIntent(id) {
+                intent.inFlight.subtract(operations)
+                for operation in operations { intent.processOwners?.removeValue(forKey: operation.uuidString) }
+                intent.applied = false
+                saveIntent(intent, id)
+            }
+        }
+        for key in SharedDefaults.suite.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+            guard let id = UUID(uuidString: String(key.dropFirst(prefix.count))) else { continue }
+            EnforcementTransaction.afterUnlock(key: key) { flushIntent(id) }
+        }
+    }
+
+    /// Native calls run without the interprocess lease. Each completion compares
+    /// its revision with durable intent: an app/extension edit during stalled IPC
+    /// causes the latest intent to be replayed, never an obsolete acknowledgement.
+    private static func flushIntent(_ id: UUID) {
+        var force = false
+        while canApply {
+            guard let lease = effectLease() else { return }
+            guard var intent = loadIntent(id) else { lease.finish(); return }
+            intent.retireDeadWriters()
+            lifecycleMutex.lock()
+            let epoch = activation
+            let cached = verified[id]
+            lifecycleMutex.unlock()
+            guard force || !intent.applied || cached?.revision != intent.revision || cached?.activation != epoch else {
+                lease.finish(); return
+            }
+            guard canApply else { lease.finish(); return }
+            let operation = UUID()
+            intent.inFlight.insert(operation)
+            if intent.processOwners == nil { intent.processOwners = [:] }
+            intent.processOwners?[operation.uuidString] = ProcessInfo.processInfo.processIdentifier
+            intent.applied = false
+            saveIntent(intent, id)
+            lease.finish()
+            let result: (matched: Bool, chunks: Int, audit: String?, error: String?)?
+            if let tokens = intent.tokens {
+                result = write(tokens: tokens, blockID: id, includeCategories: intent.includeCategories,
+                               oldCount: intent.chunks)
+            } else {
+                for i in 0..<intent.chunks {
+                    guard canApply else { deferCompletion(operation, for: id); return }
+                    ManagedSettingsStore(named: appsStoreName(for: id, chunk: i)).clearAllSettings()
+                }
+                guard canApply else { deferCompletion(operation, for: id); return }
+                ManagedSettingsStore(named: categoriesStoreName(for: id)).clearAllSettings()
+                result = (true, 1, nil, nil)
+            }
+            guard let result, let completion = effectLease() else {
+                deferCompletion(operation, for: id)
+                return
+            }
+            guard var current = loadIntent(id) else { completion.finish(); return }
+            current.inFlight.remove(operation)
+            current.processOwners?.removeValue(forKey: operation.uuidString)
+            current.retireDeadWriters()
+            guard current.revision == intent.revision else {
+                current.applied = false
+                saveIntent(current, id)
+                completion.finish()
+                force = true
+                continue
+            }
+            current.applied = result.matched && current.inFlight.isEmpty
+            current.chunks = current.inFlight.isEmpty ? result.chunks : max(current.chunks, result.chunks)
+            if current.tokens == nil, current.applied, BlockResolution.loadBlock(id: id) == nil {
+                // No live older writer can land and this owner no longer exists.
+                // Compaction keeps recovery proportional to current rules/sessions.
+                SharedDefaults.suite.removeObject(forKey: intentKey(id))
+            } else { saveIntent(current, id) }
+            if intent.tokens == nil {
+                SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: id))
+            } else {
+                SharedDefaults.suite.set(result.chunks, forKey: SharedDefaults.Keys.shieldChunkCount(blockID: id))
+            }
+            if let audit = result.audit { SharedDefaults.suite.set(audit, forKey: SharedDefaults.Keys.shieldAudit(blockID: id)) }
+            if let error = result.error { SharedDefaults.suite.set(error, forKey: SharedDefaults.Keys.shieldError(blockID: id)) }
+            else { SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldError(blockID: id)) }
+            EnforcementDiagnostics.record("shield", blockID: id,
+                detail: result.matched ? "Settings readback matched; effective shielding still requires a device check" : "Settings readback MISMATCH")
+            completion.finish()
+            if current.applied {
+                lifecycleMutex.lock(); verified[id] = (current.revision, epoch); lifecycleMutex.unlock()
+            }
+            return // A mismatch retries on the next recovery, never a tight loop.
+        }
+    }
 
     /// Apply the block's shield to its named store.
     /// Mirrors `TyriMonitorExtension.intervalDidStart` so simulator and device
@@ -91,9 +276,11 @@ enum BlockingActuator {
     ///   clears) the categories store, to isolate whether a `.specific` categories
     ///   shield suppresses sibling stores' app shields on device.
     static func apply(tokens: BlockResolution.Tokens, blockID: UUID, includeCategories: Bool = true) {
-        guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        submit(tokens: tokens, blockID: blockID, includeCategories: includeCategories)
+    }
 
+    private static func write(tokens: BlockResolution.Tokens, blockID: UUID, includeCategories: Bool,
+                              oldCount: Int) -> (matched: Bool, chunks: Int, audit: String?, error: String?)? {
         let overCapacity = tokens.apps.count > maxChunksPerBlock * tokensPerStore || tokens.webDomains.count > maxChunksPerBlock * tokensPerStore
         let empty = tokens.apps.isEmpty && tokens.categories.isEmpty && tokens.webDomains.isEmpty && tokens.domains.isEmpty
         var appChunks = chunks(tokens.apps, size: tokensPerStore)
@@ -106,46 +293,50 @@ enum BlockingActuator {
         let newCount = max(1, appChunks.count, webChunks.count)
 
         let categoriesStore = ManagedSettingsStore(named: categoriesStoreName(for: blockID))
+        guard canApply else { return nil }
         categoriesStore.shield.applications = nil
+        guard canApply else { return nil }
         categoriesStore.shield.applicationCategories = (tokens.categories.isEmpty || !includeCategories)
             ? nil
             : .specific(tokens.categories)
 
         for i in 0..<newCount {
             let store = ManagedSettingsStore(named: appsStoreName(for: blockID, chunk: i))
+            guard canApply else { return nil }
             store.shield.applications = i < appChunks.count ? appChunks[i] : nil
+            guard canApply else { return nil }
             store.shield.applicationCategories = nil
+            guard canApply else { return nil }
             store.shield.webDomains = i < webChunks.count ? webChunks[i] : nil
             // Typed-in domains have no picker token; the content filter blocks them in
             // Safari (incl. private browsing) with no "allow anyway" escape. Kept on
             // chunk 0 (always present); nil elsewhere so it never goes stale.
+            guard canApply else { return nil }
             store.webContent.blockedByFilter = (i == 0 && !tokens.domains.isEmpty)
                 ? .specific(Set(tokens.domains.map { WebDomain(domain: $0) }))
                 : nil
         }
-        let oldCount = max(1, SharedDefaults.suite.integer(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID)))
         for i in newCount..<max(newCount, oldCount) {
+            guard canApply else { return nil }
             ManagedSettingsStore(named: appsStoreName(for: blockID, chunk: i)).clearAllSettings()
         }
-        SharedDefaults.suite.set(newCount, forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID))
 
-        let matched = auditApply(blockID: blockID, appChunks: appChunks, webChunks: webChunks,
-                   expectedCategories: includeCategories ? tokens.categories : [], expectedDomains: tokens.domains)
-        EnforcementDiagnostics.record("shield", blockID: blockID, detail: matched ? "Settings readback matched; effective shielding still requires a device check" : "Settings readback MISMATCH")
+        guard let (matched, audit) = auditApply(blockID: blockID, appChunks: appChunks, webChunks: webChunks,
+                   expectedCategories: includeCategories ? tokens.categories : [], expectedDomains: tokens.domains) else { return nil }
         let error: String? = empty ? "This block has no apps or websites to block. Check its lists."
             : overCapacity ? "This selection is too large to block completely. Reduce the number of selected apps or websites."
             : !matched ? "iOS did not retain all blocking settings. Check Screen Time access and reselect the affected apps."
             : nil
-        if let error { SharedDefaults.suite.set(error, forKey: SharedDefaults.Keys.shieldError(blockID: blockID)) }
-        else { SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldError(blockID: blockID)) }
+        return (matched, newCount, audit, error)
     }
 
     /// Read every store back and persist a summary; print loudly on mismatch.
-    private static func auditApply(blockID: UUID, appChunks: [Set<ApplicationToken>], webChunks: [Set<WebDomainToken>], expectedCategories: Set<ActivityCategoryToken>, expectedDomains: Set<String>) -> Bool {
+    private static func auditApply(blockID: UUID, appChunks: [Set<ApplicationToken>], webChunks: [Set<WebDomainToken>], expectedCategories: Set<ActivityCategoryToken>, expectedDomains: Set<String>) -> (Bool, String)? {
         let newCount = max(1, appChunks.count, webChunks.count)
         var parts: [String] = []
         var mismatch = false
         for i in 0..<newCount {
+            guard canApply else { return nil }
             let store = ManagedSettingsStore(named: appsStoreName(for: blockID, chunk: i))
             let expApps = i < appChunks.count ? appChunks[i].count : 0
             let expWeb = i < webChunks.count ? webChunks[i].count : 0
@@ -154,6 +345,7 @@ enum BlockingActuator {
             if (store.shield.applications ?? []) != (i < appChunks.count ? appChunks[i] : []) || (store.shield.webDomains ?? []) != (i < webChunks.count ? webChunks[i] : []) { mismatch = true }
             parts.append("chunk\(i) apps \(gotApps)/\(expApps) web \(gotWeb)/\(expWeb)")
         }
+        guard canApply else { return nil }
         let gotCategories: Int
         switch ManagedSettingsStore(named: categoriesStoreName(for: blockID)).shield.applicationCategories {
         case .specific(let set, _):
@@ -165,17 +357,17 @@ enum BlockingActuator {
         }
         if gotCategories != expectedCategories.count { mismatch = true }
         parts.append("cats \(gotCategories)/\(expectedCategories.count)")
+        guard canApply else { return nil }
         let filter = ManagedSettingsStore(named: appsStoreName(for: blockID)).webContent.blockedByFilter
         let expectedFilter: WebContentSettings.FilterPolicy? = expectedDomains.isEmpty ? nil : .specific(Set(expectedDomains.map { WebDomain(domain: $0) }))
         if filter != expectedFilter { mismatch = true }
         parts.append("typed domains \(filter == expectedFilter ? "matched" : "MISMATCH")")
 
         let summary = (mismatch ? "MISMATCH · " : "") + parts.joined(separator: " · ")
-        SharedDefaults.suite.set(summary, forKey: SharedDefaults.Keys.shieldAudit(blockID: blockID))
         if mismatch {
             print("⚠️ BlockingActuator: shield readback mismatch for \(blockID): \(summary)")
         }
-        return !mismatch
+        return (!mismatch, summary)
     }
 
     /// Current readback of every store the block occupies (debug inspector).
@@ -199,16 +391,7 @@ enum BlockingActuator {
     /// the categories store). A missing chunk count means at most the legacy single
     /// apps store was written, so chunk 0 + cats is exactly the right set.
     static func clearShields(blockID: UUID) {
-        guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
-
-        let count = max(1, SharedDefaults.suite.integer(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID)))
-        for i in 0..<count {
-            ManagedSettingsStore(named: appsStoreName(for: blockID, chunk: i)).clearAllSettings()
-        }
-        ManagedSettingsStore(named: categoriesStoreName(for: blockID)).clearAllSettings()
-        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldChunkCount(blockID: blockID))
-        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.shieldError(blockID: blockID))
+        submit(tokens: nil, blockID: blockID)
     }
 
     // MARK: - Helpers

@@ -12,6 +12,60 @@ import XCTest
     private func capture(_ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot());a.name=name;a.lifetime = .keepAlways;add(a)
     }
+    func testBackgroundResumePreservesEditorAfterRefreshInterval() {
+        let row = app.buttons["open-block-Doomscroll guard"]
+        for _ in 0..<7 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        let name = app.textFields["Block name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        name.tap()
+        name.typeText(" resume draft")
+        let draft = name.value as? String
+        capture("suspension-before-home-simulator-fixture")
+        XCUIDevice.shared.press(.home)
+        // Longer than both 30-second periodic recovery timers.
+        let elapsed = expectation(description: "background refresh interval")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 35) { elapsed.fulfill() }
+        wait(for: [elapsed], timeout: 40)
+        app.activate()
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        XCTAssertEqual(name.value as? String, draft, "Unsaved editor state survives without relaunch")
+        capture("suspension-after-resume-simulator-fixture")
+        for _ in 0..<3 {
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(name.value as? String, draft)
+        }
+    }
+
+    func testBothSaveButtonsRejectBlankName() {
+        let row = app.buttons["open-block-Doomscroll guard"]
+        for _ in 0..<7 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        let name = app.textFields["Block name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        name.tap()
+        let text = name.value as? String ?? ""
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: text.count))
+        XCTAssertFalse(app.buttons["save-block-toolbar"].isEnabled)
+        capture("blank-name-toolbar-save-disabled-fixture")
+        for _ in 0..<9 where !app.buttons["save-block"].isHittable { app.swipeUp() }
+        XCTAssertFalse(app.buttons["save-block"].isEnabled)
+        capture("blank-name-bottom-save-disabled-fixture")
+    }
+
+    func testUsageAwaitsRealReport() {
+        app.terminate()
+        app.launchEnvironment["TYRI_UI_REVIEW"] = "tracking-pending"
+        app.launch()
+        let row = app.buttons["open-block-Doomscroll guard"]
+        for _ in 0..<7 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        XCTAssertTrue(app.staticTexts["30 min allowance · No usage update from iOS yet"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["0 of 30 min used"].exists)
+        capture("usage-awaiting-ios-report-presentation-fixture")
+    }
+
     func testBlockNowExplainsMissingAuthorization() {
         XCTAssertTrue(app.navigationBars["Focus"].waitForExistence(timeout: 10))
         for _ in 0..<7 where !app.buttons["open-block-Doomscroll guard"].isHittable { app.swipeUp() }

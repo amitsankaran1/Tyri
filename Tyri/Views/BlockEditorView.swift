@@ -44,6 +44,11 @@ struct BlockEditorView: View {
     static let cooldownOptions: [Int] = [0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
     static let breakOptions: [Int] = [0, 5, 10, 15, 20, 30]
 
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !groupIDs.isEmpty
+            && blockStore.loadError == nil && groupStore.loadError == nil
+    }
+
     var body: some View {
         Form {
             if let block = storedBlock {
@@ -149,6 +154,7 @@ struct BlockEditorView: View {
 
             Section {
                 Button("Save block", action: save)
+                    .disabled(!canSave)
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("save-block")
             }
@@ -172,7 +178,7 @@ struct BlockEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { finish() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || groupIDs.isEmpty) }
+            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!canSave).accessibilityIdentifier("save-block-toolbar") }
         }
         .sheet(isPresented: $showRecoverySettings, onDismiss: { recoveryRevision += 1 }) {
             NavigationStack { SettingsView() }
@@ -366,8 +372,12 @@ struct BlockEditorView: View {
     }
 
     private func save() {
+        guard canSave else {
+            validationError = "Enter a name and choose at least one list before saving."
+            return
+        }
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         guard hasLoaded, var block = blockStore.block(id: blockID) ?? newBlock else { finish(); return }
 
@@ -394,9 +404,8 @@ struct BlockEditorView: View {
         }
 
         let prevType = block.type
-        let prevSchedule = block.schedule
 
-        block.name = name.isEmpty ? "Untitled" : name
+        block.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         block.type = type
         block.appGroupIDs = Array(groupIDs)
         block.cooldownMinutes = cooldownMinutes
@@ -437,29 +446,16 @@ struct BlockEditorView: View {
         if prevType == .timer && type != .timer {
             usageLimitManager.removeUsageLimit(for: block)
         }
-        let scheduleChanged = prevType != type || prevSchedule != block.schedule
-        // ForegroundRecovery compares the persisted registration context and
-        // replaces only monitors whose limit or selected lists changed.
-        switch type {
-        case .schedule:
-            if scheduleChanged || !wasActive || schedulingManager.registrationErrors[block.id] != nil {
-                schedulingManager.applySchedule(for: block)
-            }
-        case .timer:
-            // DeviceActivityCenter calls may stall for seconds. Never perform
-            // native monitor registration inside the Save button's MainActor
-            // transaction. Queue the existing recovery worker after the current
-            // synchronous Save/lease has finished.
-            Task { @MainActor in ForegroundRecovery.shared.request() }
-        case .tag:      break
-        }
-
-        if schedulingManager.registrationErrors[block.id] == nil { finish() }
+        // The shared worker compares saved semantic inputs and only replaces
+        // changed or missing monitors. Admission is synchronous; native work is
+        // queued after this state transaction and survives immediate background.
+        ForegroundRecovery.shared.requestAccepted()
+        finish()
     }
 
     private func deleteBlock() {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         guard let block = blockStore.block(id: blockID) else {
             blockStore.delete(id: blockID)

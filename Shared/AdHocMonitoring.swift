@@ -9,6 +9,7 @@ struct AdHocSession: Codable, Identifiable, Equatable {
     let startedAt: Date
     let endsAt: Date
     var releaseAt: Date? = nil
+    var registered: Bool? = nil // nil decodes existing, already-started sessions
 
     var tokens: BlockResolution.Tokens {
         BlockResolution.tokens(for: BlockRule(name: group.name, appGroupIDs: [group.id]), groups: [group])
@@ -43,7 +44,7 @@ enum AdHocMonitoring {
             throw SessionError.invalidDurationOrActive
         }
         let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
-        let item = AdHocSession(group: group, startedAt: start, endsAt: start.addingTimeInterval(Double(minutes * 60)))
+        let item = AdHocSession(group: group, startedAt: start, endsAt: start.addingTimeInterval(Double(minutes * 60)), registered: false)
         guard !item.tokens.isEmpty || !item.tokens.domains.isEmpty else { throw SessionError.emptyList }
         let cal = Calendar.current
         let schedule = DeviceActivitySchedule(
@@ -53,17 +54,39 @@ enum AdHocMonitoring {
         try save(item)
         let base = "adhoc.\(item.id.uuidString)"
         guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: registrationContext(item)) else { throw SessionError.unavailable }
-        do {
-            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
-        } catch {
-            _ = MonitorRegistration.finish(ticket, context: registrationContext(item), succeeded: false)
-            finish(id: item.id)
-            throw error
+        let outcome = MonitorResult()
+        EnforcementTransaction.afterUnlock(key: ticket.name) {
+            guard EnforcementTransaction.effectsAreEnabled else { return }
+            do {
+                try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+                outcome.succeeded = true
+            } catch { outcome.error = error }
+            guard let commit = EnforcementTransaction.beginEffect() else { outcome.succeeded = false; return }
+            let result = finishRegistration(ticket, succeeded: outcome.succeeded)
+            outcome.succeeded = result == .promoted || result == .alreadyAccepted
+            commit.finish()
+            if result == .obsolete { DeviceActivityCenter().stopMonitoring([DeviceActivityName(rawValue: ticket.name)]) }
         }
-        // A reentrant completion or cancellation must never resurrect this owner.
-        guard session?.id == item.id else { return }
-        _ = MonitorRegistration.finish(ticket, context: registrationContext(item), succeeded: true)
-        BlockingActuator.apply(tokens: item.tokens, blockID: item.id)
+        transition.finish()
+        if !outcome.succeeded { throw outcome.error ?? SessionError.unavailable }
+    }
+
+    @discardableResult
+    static func finishRegistration(_ ticket: MonitorReservation, succeeded: Bool) -> MonitorLedger.Completion {
+        let item = session
+        let context = item.flatMap { "adhoc.\($0.id.uuidString)" == ticket.namespace ? registrationContext($0) : nil }
+        let result = MonitorRegistration.finish(ticket, context: context, succeeded: succeeded)
+        if var item, "adhoc.\(item.id.uuidString)" == ticket.namespace {
+            if result == .promoted || result == .alreadyAccepted {
+                item.registered = true
+                try? save(item)
+                if item.endsAt > Date() { BlockingActuator.apply(tokens: item.tokens, blockID: item.id) }
+                else { finish(id: item.id) }
+            } else if result == .failed && item.registered == false {
+                finish(id: item.id)
+            }
+        }
+        return result
     }
 
     static func reconcile(now: Date = Date()) {
@@ -73,31 +96,39 @@ enum AdHocMonitoring {
         guard let item = session else { return }
         if item.endsAt <= now { finish(id: item.id) }
         else {
-            if !DeviceActivityCenter().activities.contains(activityName(item.id)) {
-                let cal = Calendar.current
-                // Preserve the deadline. Short remaining windows use the warning
-                // callback, just like short usage lockouts and breaks.
-                let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
-                let monitorEnd = max(item.endsAt, start.addingTimeInterval(900))
-                let warning = Int(ceil(monitorEnd.timeIntervalSince(item.endsAt)))
-                let schedule = DeviceActivitySchedule(
-                    intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
-                    intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
-                    repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
-                let base = "adhoc.\(item.id.uuidString)"
-                guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: registrationContext(item)) else { return }
-                do {
-                    try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
-                    _ = MonitorRegistration.finish(ticket, context: session?.id == item.id ? registrationContext(item) : nil, succeeded: true)
-                    SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
-                } catch {
-                    _ = MonitorRegistration.finish(ticket, context: registrationContext(item), succeeded: false)
-                    SharedDefaults.suite.set("Automatic end could not be restored. Open Tyri at the end of this session.",
-                                             forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
+            if item.registered != false { BlockingActuator.apply(tokens: item.tokens, blockID: item.id) }
+            EnforcementTransaction.afterUnlock(key: "repairAdHoc.\(item.id)") {
+                if !DeviceActivityCenter().activities.contains(activityName(item.id)) {
+                    guard let reservation = EnforcementTransaction.beginEffect() else { return }
+                    guard session?.id == item.id else { reservation.finish(); return }
+                    let cal = Calendar.current
+                    // Preserve the deadline. Short remaining windows use the warning
+                    // callback, just like short usage lockouts and breaks.
+                    let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
+                    let monitorEnd = max(item.endsAt, start.addingTimeInterval(900))
+                    let warning = Int(ceil(monitorEnd.timeIntervalSince(item.endsAt)))
+                    let schedule = DeviceActivitySchedule(
+                        intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
+                        intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+                        repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
+                    let base = "adhoc.\(item.id.uuidString)"
+                    guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: registrationContext(item)) else { reservation.finish(); return }
+                    reservation.finish()
+                    do {
+                        try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+                        guard let commit = EnforcementTransaction.beginEffect() else { return }
+                        defer { commit.finish() }
+                        _ = finishRegistration(ticket, succeeded: true)
+                        SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
+                    } catch {
+                        guard let commit = EnforcementTransaction.beginEffect() else { return }
+                        defer { commit.finish() }
+                        guard finishRegistration(ticket, succeeded: false) == .failed else { return }
+                        SharedDefaults.suite.set("Automatic end could not be restored. Open Tyri at the end of this session.",
+                                                 forKey: SharedDefaults.Keys.usageLockError(blockID: item.id))
+                    }
                 }
             }
-            guard session?.id == item.id else { return }
-            BlockingActuator.apply(tokens: item.tokens, blockID: item.id)
         }
     }
 
@@ -128,7 +159,11 @@ enum AdHocMonitoring {
         MonitorRegistration.invalidate("adhoc.\(id.uuidString)", legacyName: "adhoc.\(id.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.adHocSession)
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageLockError(blockID: id))
-        if stopMonitoring { DeviceActivityCenter().stopMonitoring([activity]) }
+        if stopMonitoring {
+            EnforcementTransaction.afterUnlock(key: "stop." + activity.rawValue) {
+                DeviceActivityCenter().stopMonitoring([activity])
+            }
+        }
         BlockingActuator.clearShields(blockID: id)
     }
 

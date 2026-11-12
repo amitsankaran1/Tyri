@@ -39,34 +39,9 @@ class UsageLimitManager: ObservableObject {
     ///   (launch), leave an already-running monitor untouched so the day's
     ///   accumulated usage isn't wiped just by reopening the app.
     func applyUsageLimit(for block: BlockRule, forceReset: Bool = true) {
-        defer { ForegroundRecovery.shared.request() }
-        guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
-
-        // A live lock owns the cycle until expiry. Reopening must not arm a
-        // second allowance or consume its activity slot while apps are blocked.
-        if block.type == .timer, defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) is Date {
-            UsageMonitoring.reconcileLockout(blockID: block.id)
-            return
-        }
-        let active = UsageMonitoring.isUsageMonitorActive(for: block.id)
-
-        // Nothing to monitor (not a timer / limit off / empty groups): stop if running.
-        guard UsageMonitoring.usageEvent(for: block, groups: groups) != nil else {
-            if active { UsageMonitoring.stopUsageMonitor(for: block.id) }
-            if block.type == .timer {
-                defaults.set("No measurable apps selected. Open Lists and select apps, categories or websites in the Screen Time picker. Typed website addresses alone cannot measure usage.", forKey: SharedDefaults.Keys.usageError(blockID: block.id))
-            }
-            return
-        }
-
-        // Idempotent launch path: preserve the running monitor (and its counter).
-        if active && !forceReset && defaults.string(forKey: SharedDefaults.Keys.usageError(blockID: block.id)) == nil { return }
-        UsageMonitoring.startUsageMonitor(for: block, groups: groups)
-        #if DEBUG
-        DebugLog.shared.log(.deviceActivity,
-            "applyUsageLimit(\(block.name)): \(block.usageLimitMinutes ?? 0)m → lock \(block.usageLockMinutes)m")
-        #endif
+        // Semantic edits are detected from persisted context; retry/relaunch
+        // never remints a healthy allowance merely because forceReset was true.
+        ForegroundRecovery.shared.requestAccepted()
     }
 
     /// Full teardown: stop the counting + lockout windows and clear the lock state.
@@ -74,7 +49,7 @@ class UsageLimitManager: ObservableObject {
     /// scheduled run or manual enable is keeping it up).
     func removeUsageLimit(for block: BlockRule) {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         let wasLocked = lockEnd(for: block.id) != nil
         UsageMonitoring.stopUsageMonitor(for: block.id)
@@ -103,16 +78,13 @@ class UsageLimitManager: ObservableObject {
     /// Clear any lockouts whose end-time has already passed (e.g. while the app
     /// was closed and the one-shot lock window didn't fire) and re-arm the budget.
     func reconcileExpiredLocks() {
-        for block in BlockStore.shared.blocks where block.type == .timer {
-            UsageMonitoring.reconcileLockout(blockID: block.id)
-        }
-        refresh()
+        ForegroundRecovery.shared.request()
     }
 
     /// Re-arm a block's budget after an early release / external clear.
     func rearmAfterRelease(blockID: UUID) {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         UsageMonitoring.stopLockout(for: blockID)
         if let block = BlockStore.shared.block(id: blockID) {
@@ -142,6 +114,12 @@ class UsageLimitManager: ObservableObject {
             forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date,
               endsAt > Date() else { return nil }
         return endsAt
+    }
+
+    func setForegroundActive(_ active: Bool) {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        if active { startPeriodicRefresh() }
     }
 
     private func startPeriodicRefresh() {

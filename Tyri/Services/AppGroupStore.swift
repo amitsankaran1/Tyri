@@ -15,6 +15,8 @@ class AppGroupStore: ObservableObject {
 
     @Published private(set) var groups: [AppGroup] = []
 
+    @Published private(set) var loadError: String?
+
     private let groupsKey = SharedDefaults.Keys.groups
     private var defaults: UserDefaults { SharedDefaults.suite }
     private var saveTask: Task<Void, Never>?
@@ -42,12 +44,14 @@ class AppGroupStore: ObservableObject {
     }
 
     func insert(_ item: AppGroup) {
+        guard loadError == nil else { return }
         guard !groups.contains(where: { $0.id == item.id }) else { return }
         groups.append(item)
         flush()
     }
 
     func update(_ group: AppGroup) {
+        guard loadError == nil else { return }
         guard let idx = groups.firstIndex(where: { $0.id == group.id }) else { return }
         var stamped = group
         stamped.updatedAt = Date()
@@ -56,12 +60,14 @@ class AppGroupStore: ObservableObject {
     }
 
     func setSelection(id: UUID, selection: FamilyActivitySelection) {
+        guard loadError == nil else { return }
         guard var g = group(id: id) else { return }
         g.selection = selection
         update(g)
     }
 
     func delete(id: UUID) {
+        guard loadError == nil else { return }
         groups.removeAll(where: { $0.id == id })
         save()
     }
@@ -72,6 +78,7 @@ class AppGroupStore: ObservableObject {
     }
 
     func replaceAll(_ newGroups: [AppGroup]) {
+        guard loadError == nil else { return }
         groups = newGroups
         flush()
     }
@@ -94,6 +101,7 @@ class AppGroupStore: ObservableObject {
     func reload() { load() }
 
     private func persistNow() {
+        guard loadError == nil else { return }
         do {
             let data = try JSONEncoder().encode(groups)
             defaults.set(data, forKey: groupsKey)
@@ -103,12 +111,13 @@ class AppGroupStore: ObservableObject {
     }
 
     private func load() {
-        guard let data = defaults.data(forKey: groupsKey) else { groups = []; return }
+        guard let data = defaults.data(forKey: groupsKey) else { groups = []; loadError = nil; return }
         do {
             groups = try JSONDecoder().decode([AppGroup].self, from: data)
+            loadError = nil
         } catch {
             print("❌ Failed to decode groups: \(error)")
-            groups = []
+            loadError = "Saved lists could not be read. Your original data has been kept. Reopen Tyri to retry."
         }
     }
 }

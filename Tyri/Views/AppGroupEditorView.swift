@@ -210,8 +210,9 @@ struct AppGroupEditorView: View {
     }
 
     private func save() {
+        guard groupStore.loadError == nil, BlockStore.shared.loadError == nil else { return }
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         guard hasLoaded, var group = groupStore.group(id: groupID) ?? newGroup else { finish(); return }
 
@@ -256,7 +257,7 @@ struct AppGroupEditorView: View {
 
     private func deleteGroup() {
         guard let transition = EnforcementTransaction.begin() else { return }
-        defer { transition.finish() }
+        defer { ForegroundRecovery.shared.finish(transition) }
 
         // Backstop for the UI gate: detaching this list from an active block would
         // weaken it.

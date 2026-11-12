@@ -31,6 +31,38 @@ enum BreakMonitoring {
             + String((defaults.object(forKey: "scheduleWindowStart.\(blockID.uuidString)") as? Date)?.timeIntervalSince1970 ?? 0)
     }
 
+    static func pendingEnd(blockID: UUID) -> Date? {
+        SharedDefaults.suite.object(forKey: "breakPendingEnd.\(blockID)") as? Date
+    }
+
+    @discardableResult
+    static func finishRegistration(_ ticket: MonitorReservation, blockID: UUID, end: Date, succeeded: Bool) -> MonitorLedger.Completion {
+        let block = BlockResolution.loadBlock(id: blockID)
+        if let block, block.type == .schedule { ScheduleEnforcement.reconcile(block: block) }
+        let currentEnd = breakEnd(blockID: blockID) ?? pendingEnd(blockID: blockID)
+        let eligible = block.map { $0.type != .timer && ($0.isEnabled || SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID))) } ?? false
+        let context = eligible ? currentEnd.map { registrationContext(blockID: blockID, end: $0) } : nil
+        let pendingContext = SharedDefaults.suite.string(forKey: "breakPendingContext.\(blockID)")
+        let validContext = pendingEnd(blockID: blockID) == nil || pendingContext == context ? context : nil
+        let result = MonitorRegistration.finish(ticket, context: validContext, succeeded: succeeded)
+        if currentEnd == end, pendingEnd(blockID: blockID) != nil {
+            if result == .promoted || result == .alreadyAccepted {
+                SharedDefaults.suite.removeObject(forKey: "breakPendingEnd.\(blockID)")
+                SharedDefaults.suite.removeObject(forKey: "breakPendingContext.\(blockID)")
+                if end > Date(), let block = BlockResolution.loadBlock(id: blockID),
+                   block.isEnabled || SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID)) {
+                    SharedDefaults.suite.set(end, forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
+                    SharedDefaults.suite.set(true, forKey: SharedDefaults.Keys.breakUsed(blockID: blockID))
+                    BlockingActuator.clearShields(blockID: blockID)
+                }
+            } else if result == .failed || result == .obsolete {
+                SharedDefaults.suite.removeObject(forKey: "breakPendingEnd.\(blockID)")
+                SharedDefaults.suite.removeObject(forKey: "breakPendingContext.\(blockID)")
+            }
+        }
+        return result
+    }
+
     /// Is the block currently on a break (a future `breakEnd` is the source of truth)?
     static func isOnBreak(blockID: UUID) -> Bool {
         guard let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.breakEnd(blockID: blockID)) as? Date else { return false }
@@ -57,7 +89,7 @@ enum BreakMonitoring {
         defer { transition.finish() }
 
         guard let block = BlockResolution.loadBlock(id: blockID), block.type != .timer,
-              minutes > 0, !breakUsed(blockID: blockID), breakEnd(blockID: blockID) == nil else { return false }
+              minutes > 0, !breakUsed(blockID: blockID), breakEnd(blockID: blockID) == nil, pendingEnd(blockID: blockID) == nil else { return false }
         // Re-check ownership at execution, not only when SwiftUI displayed the button.
         if block.type == .schedule { ScheduleEnforcement.reconcile(block: block) }
         guard block.isEnabled || SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.running(blockID: blockID)) else { return false }
@@ -74,19 +106,25 @@ enum BreakMonitoring {
         let base = "break.\(blockID.uuidString)"
         let context = registrationContext(blockID: blockID, end: end)
         guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { return false }
-        do {
-            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
-        } catch {
-            _ = MonitorRegistration.finish(ticket, context: context, succeeded: false)
-            print("❌ startBreak monitoring failed for \(blockID): \(error)")
-            return false
+        SharedDefaults.suite.set(context, forKey: "breakPendingContext.\(blockID)")
+        SharedDefaults.suite.set(end, forKey: "breakPendingEnd.\(blockID)")
+        let result = MonitorResult()
+        EnforcementTransaction.afterUnlock(key: ticket.name) {
+            guard EnforcementTransaction.effectsAreEnabled else { return }
+            do {
+                try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+                result.succeeded = true
+            } catch { result.error = error }
+            guard let commit = EnforcementTransaction.beginEffect() else { result.succeeded = false; return }
+            let completion = finishRegistration(ticket, blockID: blockID, end: end, succeeded: result.succeeded)
+            result.succeeded = (completion == .promoted || completion == .alreadyAccepted) && isOnBreak(blockID: blockID)
+            commit.finish()
+            if completion == .obsolete {
+                DeviceActivityCenter().stopMonitoring([DeviceActivityName(rawValue: ticket.name)])
+            }
         }
-        SharedDefaults.suite.set(end, forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
-        SharedDefaults.suite.set(true, forKey: SharedDefaults.Keys.breakUsed(blockID: blockID))
-        _ = MonitorRegistration.finish(ticket, context: context, succeeded: true)
-
-        BlockingActuator.clearShields(blockID: blockID)
-        return true
+        transition.finish()
+        return result.succeeded
     }
 
     static func finishIfExpired(blockID: UUID, now: Date = Date()) {
@@ -95,26 +133,36 @@ enum BreakMonitoring {
 
         guard let end = breakEnd(blockID: blockID) else { return }
         if end <= now { endBreak(blockID: blockID, reapply: true); return }
-        guard !DeviceActivityCenter().activities.contains(breakActivityName(for: blockID)) else { return }
-        let cal = Calendar.current
-        let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
-        let monitorEnd = max(end, start.addingTimeInterval(900))
-        let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
-        let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
-            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
-            repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
-        let base = "break.\(blockID.uuidString)"
-        let context = registrationContext(blockID: blockID, end: end)
-        guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { return }
-        do {
-            try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
-            _ = MonitorRegistration.finish(ticket, context: context, succeeded: true)
-        }
-        catch {
-            _ = MonitorRegistration.finish(ticket, context: context, succeeded: false)
-            // Never leave an unbounded pause if its automatic re-lock is lost.
-            endBreak(blockID: blockID, reapply: true)
+        EnforcementTransaction.afterUnlock(key: "repairBreak.\(blockID)") {
+            guard !DeviceActivityCenter().activities.contains(breakActivityName(for: blockID)) else { return }
+            guard let reservation = EnforcementTransaction.beginEffect() else { return }
+            guard breakEnd(blockID: blockID) == end else { reservation.finish(); return }
+            let cal = Calendar.current
+            let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
+            let monitorEnd = max(end, start.addingTimeInterval(900))
+            let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
+            let schedule = DeviceActivitySchedule(
+                intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
+                intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+                repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
+            let base = "break.\(blockID.uuidString)"
+            let context = registrationContext(blockID: blockID, end: end)
+            guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: context) else { reservation.finish(); return }
+            reservation.finish()
+            do {
+                try DeviceActivityCenter().startMonitoring(DeviceActivityName(rawValue: ticket.name), during: schedule)
+                guard let commit = EnforcementTransaction.beginEffect() else { return }
+                defer { commit.finish() }
+                _ = MonitorRegistration.finish(ticket, context: breakEnd(blockID: blockID).map { registrationContext(blockID: blockID, end: $0) }, succeeded: true)
+            }
+            catch {
+                guard let commit = EnforcementTransaction.beginEffect() else { return }
+                defer { commit.finish() }
+                let result = MonitorRegistration.finish(ticket, context: breakEnd(blockID: blockID).map { registrationContext(blockID: blockID, end: $0) }, succeeded: false)
+                guard result == .failed else { return }
+                // Never leave an unbounded pause if its automatic re-lock is lost.
+                endBreak(blockID: blockID, reapply: true)
+            }
         }
     }
 
@@ -131,7 +179,13 @@ enum BreakMonitoring {
         let activity = breakActivityName(for: blockID)
         MonitorRegistration.invalidate("break.\(blockID.uuidString)", legacyName: "break.\(blockID.uuidString)")
         SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.breakEnd(blockID: blockID))
-        if stopMonitoring { DeviceActivityCenter().stopMonitoring([activity]) }
+        SharedDefaults.suite.removeObject(forKey: "breakPendingEnd.\(blockID)")
+        SharedDefaults.suite.removeObject(forKey: "breakPendingContext.\(blockID)")
+        if stopMonitoring {
+            EnforcementTransaction.afterUnlock(key: "stop." + activity.rawValue) {
+                DeviceActivityCenter().stopMonitoring([activity])
+            }
+        }
         guard reapply else { return }
 
         if let block = BlockResolution.loadBlock(id: blockID), block.type == .schedule {

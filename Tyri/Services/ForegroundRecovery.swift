@@ -2,6 +2,9 @@ import Combine
 import DeviceActivity
 import FamilyControls
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Contains native value inputs only; no shared-store or actor access during IPC.
 nonisolated private struct RecoveryJob: @unchecked Sendable {
@@ -14,8 +17,9 @@ nonisolated private struct RecoveryJob: @unchecked Sendable {
         let center = DeviceActivityCenter()
         let name = DeviceActivityName(rawValue: ticket.name)
         do {
+            guard EnforcementTransaction.effectsAreEnabled else { throw CancellationError() }
             do { try center.startMonitoring(name, during: schedule, events: events) } catch {
-                guard !fallback.isEmpty else { throw error }
+                guard !fallback.isEmpty, EnforcementTransaction.effectsAreEnabled else { throw error }
                 try center.startMonitoring(name, during: schedule, events: fallback)
                 return (true, false, nil)
             }
@@ -29,6 +33,75 @@ final class ForegroundRecovery: ObservableObject {
     static let shared = ForegroundRecovery()
     @Published private(set) var isChecking = true
     @Published private(set) var registeredUsageIDs: Set<UUID> = []
+    private var active = true
+    // Explicit user mutations own a bounded completion window. Routine refresh
+    // does not: it stops on resignation. Expiration revokes both kinds of work.
+    private var acceptedWork = false
+    private var commands: Set<UUID> = []
+    private var endAcceptedWork: (() -> Void)?
+    private var canRun: Bool { active || acceptedWork || !commands.isEmpty }
+
+    /// App mutations finish their short state lease immediately. Native effects
+    /// run off MainActor with a finite suspension assertion, including Save,
+    /// NFC, cooldown release, deletion and Emergency Access.
+    func finish(_ lease: EnforcementTransaction.Lease) {
+        let effects = lease.finish(deferEffects: true)
+        guard !effects.isEmpty else { return }
+        let commandID = UUID()
+        commands.insert(commandID)
+        let end = beginBackgroundWork()
+        Task {
+            await Task.detached {
+                for effect in effects where EnforcementTransaction.effectsAreEnabled { effect() }
+            }.value
+            commands.remove(commandID)
+            end()
+            if active { request() }
+            else if !canRun {
+                BlockingActuator.setEffectsEnabled(false)
+                EnforcementTransaction.setEffectsEnabled(false)
+            }
+        }
+    }
+
+    func command<T: Sendable>(_ operation: @escaping @Sendable () throws -> T) async throws -> T {
+        let commandID = UUID()
+        commands.insert(commandID)
+        let end = beginBackgroundWork()
+        defer {
+            commands.remove(commandID)
+            end()
+            if active { request() }
+            else if !canRun {
+                BlockingActuator.setEffectsEnabled(false)
+                EnforcementTransaction.setEffectsEnabled(false)
+            }
+        }
+        return try await Task.detached {
+            guard EnforcementTransaction.effectsAreEnabled else { throw CancellationError() }
+            return try operation()
+        }.value
+    }
+
+    func requestAccepted() {
+        registeredUsageIDs = []
+        guard active else { return }
+        if !acceptedWork {
+            acceptedWork = true
+            endAcceptedWork = beginBackgroundWork()
+        }
+        Task { @MainActor in self.request() }
+    }
+
+    private func finishAcceptedWork() {
+        acceptedWork = false
+        endAcceptedWork?()
+        endAcceptedWork = nil
+        BlockingActuator.setEffectsEnabled(active || !commands.isEmpty)
+        EnforcementTransaction.setEffectsEnabled(active || !commands.isEmpty)
+    }
+    private var worker: Task<Void, Never>?
+    private var preparing = false
     private var started = false
     private var running = false
     /// Coalesces saves that arrive while native recovery IPC is in flight. The
@@ -43,36 +116,110 @@ final class ForegroundRecovery: ObservableObject {
         guard !started else { return }
         _ = ScreenTimeManager.shared
         started = true
-        Task {
-            await withLease {
-                Migration.runIfNeeded()
-                BlockStore.shared.reload()
-                AppGroupStore.shared.reload()
-            }
+        #if canImport(UIKit)
+        setActive(UIApplication.shared.applicationState == .active)
+        #else
+        setActive(true)
+        #endif
+    }
+
+    /// Periodic work stops on resignation. Explicit accepted commands may finish
+    /// within their background assertion; expiration closes every effect lane.
+    /// Durable reservations let the next activation reconcile interrupted work.
+    func setActive(_ value: Bool) {
+        active = value
+        BlockingActuator.setEffectsEnabled(value || acceptedWork || !commands.isEmpty)
+        EnforcementTransaction.setEffectsEnabled(value || acceptedWork || !commands.isEmpty)
+        SchedulingManager.shared.setForegroundActive(value)
+        UsageLimitManager.shared.setForegroundActive(value)
+        BreakManager.shared.setForegroundActive(value)
+        if !value && !acceptedWork && commands.isEmpty {
+            rerunRequested = false
+            worker?.cancel()
+            isChecking = false
+        } else if started {
             request()
         }
     }
 
+    private func prepare() {
+        guard canRun, !preparing else { return }
+        preparing = true
+        worker = Task {
+            let endPreparation = beginBackgroundWork()
+            defer { endPreparation() }
+            do {
+                try await withLease {
+                    Migration.runIfNeeded()
+                    BlockStore.shared.reload()
+                    AppGroupStore.shared.reload()
+                }
+            } catch { }
+            preparing = false
+            if canRun { request() }
+        }
+    }
+
+    /// Protect the short state transaction and any already-started post-unlock
+    /// effect from suspension. Expiration closes admission; it never attempts to
+    /// unlock another thread's state transaction or interrupt native IPC.
+    private func beginBackgroundWork() -> () -> Void {
+        #if canImport(UIKit)
+        var identifier = UIBackgroundTaskIdentifier.invalid
+        identifier = UIApplication.shared.beginBackgroundTask(withName: "Enforcement recovery") { [weak self] in
+            self?.commands.removeAll()
+            self?.finishAcceptedWork()
+            self?.setActive(false)
+            if identifier != .invalid {
+                UIApplication.shared.endBackgroundTask(identifier)
+                identifier = .invalid
+            }
+        }
+        return {
+            if identifier != .invalid {
+                UIApplication.shared.endBackgroundTask(identifier)
+                identifier = .invalid
+            }
+        }
+        #else
+        return {}
+        #endif
+    }
+
     func request() {
-        guard started else { return }
-        guard SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { return }
+        guard started, canRun else { return }
+        guard BlockStore.shared.loadError == nil, AppGroupStore.shared.loadError == nil else {
+            isChecking = false
+            finishAcceptedWork()
+            return
+        }
+        guard SharedDefaults.suite.bool(forKey: SharedDefaults.Keys.migratedToBlocksV2) else { prepare(); return }
         // Deadline fallback is independent of any stalled native operation.
         // This lane never waits for a lease and never performs DeviceActivity IPC.
+        let endDeadlineWork = beginBackgroundWork()
         if let lease = EnforcementTransaction.begin(wait: false) {
-            let changed = reconcileDeadlines()
-            lease.finish()
+            // Refresh desired state before any pending apply can execute: a
+            // schedule may have ended while inactive, and observation may stall.
+            let changed = reconcileState()
+            let effects = lease.finish(deferEffects: true)
+            Task {
+                await Task.detached { for effect in effects { effect() } }.value
+                endDeadlineWork()
+            }
             if changed {
                 BreakManager.shared.publishPersistedState()
                 AdHocManager.shared.publishPersistedState()
                 UsageLimitManager.shared.refresh()
             }
-        }
+        } else { endDeadlineWork() }
         guard !running else {
+            isChecking = true
             rerunRequested = true
             return
         }
         guard ScreenTimeManager.shared.authorizationStatus == .approved else {
             isChecking = false
+            finishAcceptedWork()
             return
         }
         BlockStore.shared.flush()
@@ -82,98 +229,112 @@ final class ForegroundRecovery: ObservableObject {
         // Restore the existing break timer before the first native observation:
         // a persisted break still needs its deadline tick if that read stalls.
         BreakManager.shared.publishPersistedState()
-        Task {
-            var attempted: Set<String> = []
-            var errors: [UUID: String] = [:]
-            var observed: Set<String> = []
-            // A second pass can rearm an allowance whose deadline crossed during
-            // IPC. Failed semantic operations are not blindly retried this run.
-            for _ in 0..<2 {
-                observed = await Task.detached { Self.observe() }.value
-                let jobs = await withLease {
-                    reconcileState()
-                    return makePlan(observed: observed, attempted: &attempted)
+        worker = Task {
+            let endPass = beginBackgroundWork()
+            defer { endPass() }
+            defer {
+                running = false
+                isChecking = false
+                if canRun && rerunRequested {
+                    rerunRequested = false
+                    request()
+                } else {
+                    finishAcceptedWork()
                 }
-                await retire(observed: observed)
-                for job in jobs {
-                    let valid = await withLease {
-                        context(job.ticket.namespace) == job.ticket.owner.context
-                            && MonitorRegistration.pending(job.ticket.namespace)?.owner == job.ticket.owner
-                    }
-                    guard valid else {
-                        await withLease { _ = MonitorRegistration.finish(job.ticket, context: nil, succeeded: false) }
-                        continue
-                    }
-                    let outcome = await Task.detached { job.execute() }.value
-                    await withLease {
-                        let currentContext = context(job.ticket.namespace)
-                        let result: MonitorLedger.Completion
-                        if job.ticket.namespace.hasPrefix("usage.") {
-                            result = UsageMonitoring.finishRegistration(
-                                job.ticket, context: currentContext, succeeded: outcome.succeeded)
-                        } else {
-                            result = MonitorRegistration.finish(
-                                job.ticket, context: currentContext, succeeded: outcome.succeeded)
-                        }
-                        if result == .promoted || result == .alreadyAccepted { observed.insert(job.ticket.name) }
-                        if result == .promoted || result == .alreadyAccepted,
-                            let id = Self.blockID(job.ticket.namespace)
-                        {
-                            if job.ticket.namespace.hasPrefix("usage.") {
-                                SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: id))
-                            }
-                            if job.ticket.namespace.hasPrefix("lock.") || job.ticket.namespace.hasPrefix("adhoc.") {
-                                SharedDefaults.suite.removeObject(
-                                    forKey: SharedDefaults.Keys.usageLockError(blockID: id))
-                            }
-                        }
-                        if result == .failed { publishFailure(job.ticket, detail: outcome.error, errors: &errors) }
-                        if result == .promoted, !outcome.reportsProgress, job.ticket.namespace.hasPrefix("usage."),
-                            let id = Self.blockID(job.ticket.namespace)
-                        {
-                            SharedDefaults.suite.removeObject(forKey: UsageProgress.key(id))
-                        }
-                        // Time can change ownership even without a saved-data edit.
+            }
+            do {
+                var attempted: Set<String> = []
+                var errors: [UUID: String] = [:]
+                var observed: Set<String> = []
+                // A second pass can rearm an allowance whose deadline crossed during
+                // IPC. Failed semantic operations are not blindly retried this run.
+                for _ in 0..<2 {
+                    try Task.checkCancellation()
+                    guard canRun else { throw CancellationError() }
+                    observed = await Task.detached { Self.observe() }.value
+                    let jobs = try await withLease {
                         reconcileState()
+                        return makePlan(observed: observed, attempted: &attempted)
                     }
-                    await retire(observed: observed)
+                    try await retire(observed: observed)
+                    for job in jobs {
+                        let valid = try await withLease {
+                            context(job.ticket.namespace) == job.ticket.owner.context
+                                && MonitorRegistration.pending(job.ticket.namespace)?.owner == job.ticket.owner
+                        }
+                        guard valid else {
+                            try await withLease { _ = MonitorRegistration.finish(job.ticket, context: nil, succeeded: false) }
+                            continue
+                        }
+                        let outcome = await Task.detached { job.execute() }.value
+                        try await withLease {
+                            let result = completeRegistration(job.ticket, succeeded: outcome.succeeded)
+                            if result == .promoted || result == .alreadyAccepted { observed.insert(job.ticket.name) }
+                            if result == .promoted || result == .alreadyAccepted,
+                                let id = Self.blockID(job.ticket.namespace)
+                            {
+                                if job.ticket.namespace.hasPrefix("usage.") {
+                                    SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: id))
+                                }
+                                if job.ticket.namespace.hasPrefix("lock.") || job.ticket.namespace.hasPrefix("adhoc.") {
+                                    SharedDefaults.suite.removeObject(
+                                        forKey: SharedDefaults.Keys.usageLockError(blockID: id))
+                                }
+                            }
+                            if result == .failed { publishFailure(job.ticket, detail: outcome.error, errors: &errors) }
+                            if result == .promoted, !outcome.reportsProgress, job.ticket.namespace.hasPrefix("usage."),
+                                let id = Self.blockID(job.ticket.namespace)
+                            {
+                                SharedDefaults.suite.removeObject(forKey: UsageProgress.key(id))
+                            }
+                            // Time can change ownership even without a saved-data edit.
+                            reconcileState()
+                        }
+                        try await retire(observed: observed)
+                    }
+                    if jobs.isEmpty { break }
                 }
-                if jobs.isEmpty { break }
-            }
-            observed = await Task.detached { Self.observe() }.value
-            await withLease {
-                reconcileState()
-                registeredUsageIDs = Set(
-                    BlockResolution.loadBlocks().filter {
-                        $0.type == .timer
-                            && SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: $0.id))
-                                == nil
-                            && observed.contains(UsageMonitoring.usageActivityName(for: $0.id).rawValue)
-                    }.map(\.id))
-            }
-            SchedulingManager.shared.publishRecovery(errors: errors)
-            UsageLimitManager.shared.refresh()
-            AdHocManager.shared.publishPersistedState()
-            BreakManager.shared.publishPersistedState()
-            running = false
-            isChecking = false
-            if rerunRequested {
-                rerunRequested = false
-                request()
-            }
+                try Task.checkCancellation()
+                guard canRun else { throw CancellationError() }
+                observed = await Task.detached { Self.observe() }.value
+                try await withLease {
+                    reconcileState()
+                    registeredUsageIDs = Set(
+                        BlockResolution.loadBlocks().filter {
+                            $0.type == .timer
+                                && SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: $0.id))
+                                    == nil
+                                && observed.contains(UsageMonitoring.usageActivityName(for: $0.id).rawValue)
+                                && MonitorRegistration.load("usage.\($0.id.uuidString)", legacyName: UsageMonitoring.legacyUsageName($0.id),
+                                    context: UsageMonitoring.registrationContext(for: $0, groups: BlockResolution.loadGroups()) ?? "")?.confirmed?.context
+                                    == UsageMonitoring.registrationContext(for: $0, groups: BlockResolution.loadGroups())
+                        }.map(\.id))
+                }
+                SchedulingManager.shared.publishRecovery(errors: errors)
+                UsageLimitManager.shared.refresh()
+                AdHocManager.shared.publishPersistedState()
+                BreakManager.shared.publishPersistedState()
+            } catch { /* Resignation/expiration: reconcile pending work on activation. */ }
         }
     }
 
     /// Never block MainActor acquiring a lease held by another process's IPC.
-    private func withLease<T>(_ body: () -> T) async -> T {
-        while true {
+    private func withLease<T>(_ body: () -> T) async throws -> T {
+        while canRun && !Task.isCancelled {
+            let endWork = beginBackgroundWork()
             if let lease = EnforcementTransaction.begin(wait: false) {
                 let result = body()
-                lease.finish()
+                let effects = lease.finish(deferEffects: true)
+                await Task.detached { for effect in effects { effect() } }.value
+                endWork()
+                try Task.checkCancellation()
+                guard canRun else { throw CancellationError() }
                 return result
             }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            endWork()
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
+        throw CancellationError()
     }
     nonisolated private static func observe() -> Set<String> {
         precondition(!Thread.isMainThread)
@@ -208,35 +369,37 @@ final class ForegroundRecovery: ObservableObject {
         {
             return UsageMonitoring.lockContext(blockID: id, end: end)
         }
-        if namespace.hasPrefix("break."), let end = BreakMonitoring.breakEnd(blockID: id), end > Date() {
+        if namespace.hasPrefix("break."), let end = BreakMonitoring.breakEnd(blockID: id) ?? BreakMonitoring.pendingEnd(blockID: id), end > Date() {
             return BreakMonitoring.registrationContext(blockID: id, end: end)
         }
         return nil
     }
 
-    /// Pure state/shield helpers suppress all DeviceActivity calls in this lease.
-    private func reconcileState() {
-        _ = reconcileDeadlines()
+    /// Persist state and shield intent only. BlockingActuator defers every native
+    /// shield call until the OUTERMOST lease is released, including nested helpers.
+    @discardableResult
+    private func reconcileState() -> Bool {
+        let changed = reconcileDeadlines()
         let defaults = SharedDefaults.suite
         let now = Date()
         let groups = BlockResolution.loadGroups()
         for block in BlockResolution.loadBlocks() {
             if block.type == .schedule { ScheduleEnforcement.reconcile(block: block, now: now, stopMonitoring: false) }
-            if block.type == .timer,
-                let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date
-            {
-                if end > now {
-                    BlockingActuator.apply(
-                        tokens: BlockResolution.tokens(for: block, groups: groups), blockID: block.id)
+            if block.type != .schedule {
+                let locked = block.type == .timer &&
+                    (defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date).map { $0 > now } == true
+                if (block.isEnabled || locked) && !BreakMonitoring.isOnBreak(blockID: block.id) {
+                    BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups), blockID: block.id)
+                } else {
+                    BlockingActuator.clearShields(blockID: block.id)
                 }
             }
-            if block.isEnabled && !BreakMonitoring.isOnBreak(blockID: block.id) {
-                BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups), blockID: block.id)
-            }
         }
-        if let session = AdHocMonitoring.session {
+        if let session = AdHocMonitoring.session, session.registered != false {
             BlockingActuator.apply(tokens: session.tokens, blockID: session.id)
         }
+        BlockingActuator.replayPending()
+        return changed
     }
 
     private func reconcileDeadlines() -> Bool {
@@ -258,6 +421,10 @@ final class ForegroundRecovery: ObservableObject {
                 }
                 changed = true
             }
+            if let end = BreakMonitoring.pendingEnd(blockID: block.id), end <= now {
+                BreakMonitoring.endBreak(blockID: block.id, reapply: true, stopMonitoring: false)
+                changed = true
+            }
             if let end = BreakMonitoring.breakEnd(blockID: block.id), end <= now {
                 BreakMonitoring.endBreak(blockID: block.id, reapply: true, stopMonitoring: false)
                 changed = true
@@ -268,6 +435,20 @@ final class ForegroundRecovery: ObservableObject {
             changed = true
         }
         return changed
+    }
+
+    private func completeRegistration(_ ticket: MonitorReservation, succeeded: Bool) -> MonitorLedger.Completion {
+        if ticket.namespace.hasPrefix("usage.") {
+            return UsageMonitoring.finishRegistration(ticket, context: context(ticket.namespace), succeeded: succeeded)
+        }
+        if ticket.namespace.hasPrefix("adhoc.") {
+            return AdHocMonitoring.finishRegistration(ticket, succeeded: succeeded)
+        }
+        if ticket.namespace.hasPrefix("break."), let id = Self.blockID(ticket.namespace),
+           let end = BreakMonitoring.breakEnd(blockID: id) ?? BreakMonitoring.pendingEnd(blockID: id) {
+            return BreakMonitoring.finishRegistration(ticket, blockID: id, end: end, succeeded: succeeded)
+        }
+        return MonitorRegistration.finish(ticket, context: context(ticket.namespace), succeeded: succeeded)
     }
 
     private func makePlan(observed: Set<String>, attempted: inout Set<String>) -> [RecoveryJob] {
@@ -283,19 +464,18 @@ final class ForegroundRecovery: ObservableObject {
             else { return }
             if let pending = ledger.pending, pending.context == semantic, observed.contains(pending.name) {
                 let ticket = MonitorReservation(namespace: namespace, owner: pending)
-                if namespace.hasPrefix("usage.") {
-                    _ = UsageMonitoring.finishRegistration(ticket, context: semantic, succeeded: true)
-                } else {
-                    _ = MonitorRegistration.finish(ticket, context: semantic, succeeded: true)
-                }
+                _ = completeRegistration(ticket, succeeded: true)
                 return
             }
+            if !commands.isEmpty, ledger.pending != nil,
+               namespace.hasPrefix("break.") || namespace.hasPrefix("adhoc.") { return }
             let legacySegmentsPresent =
                 namespace.hasPrefix("block.") && ledger.confirmed?.name == namespace
                 && observed.contains(namespace + ".early") && observed.contains(namespace + ".late")
             if let confirmed = ledger.confirmed, confirmed.context == semantic,
                 observed.contains(confirmed.name) || legacySegmentsPresent
             {
+                _ = completeRegistration(MonitorReservation(namespace: namespace, owner: confirmed), succeeded: true)
                 if let id = Self.blockID(namespace) {
                     if namespace.hasPrefix("usage.") {
                         defaults.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: id))
@@ -336,7 +516,7 @@ final class ForegroundRecovery: ObservableObject {
                         forKey: SharedDefaults.Keys.usageError(blockID: block.id))
                 }
             }
-            if let end = BreakMonitoring.breakEnd(blockID: block.id) {
+            if let end = BreakMonitoring.breakEnd(blockID: block.id) ?? BreakMonitoring.pendingEnd(blockID: block.id) {
                 plan(
                     "break.\(block.id.uuidString)", legacy: "break.\(block.id.uuidString)",
                     schedule: deadlineSchedule(end))
@@ -382,8 +562,8 @@ final class ForegroundRecovery: ObservableObject {
         }
     }
 
-    private func retire(observed: Set<String>) async {
-        let names = await withLease {
+    private func retire(observed: Set<String>) async throws {
+        let names = try await withLease {
             for key in SharedDefaults.suite.dictionaryRepresentation().keys
             where key.hasPrefix(MonitorRegistration.prefix) {
                 let namespace = String(key.dropFirst(MonitorRegistration.prefix.count))
@@ -406,8 +586,12 @@ final class ForegroundRecovery: ObservableObject {
             }
             return names
         }
-        for name in names { await Task.detached { Self.stop(name) }.value }
-        await withLease { MonitorRegistration.acknowledgeRetired(names) }
+        for name in names {
+            try Task.checkCancellation()
+            guard canRun else { throw CancellationError() }
+            await Task.detached { Self.stop(name) }.value
+        }
+        try await withLease { MonitorRegistration.acknowledgeRetired(names) }
         legacyRetirements.subtract(names)
     }
 }
