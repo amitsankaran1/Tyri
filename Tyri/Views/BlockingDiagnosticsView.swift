@@ -46,6 +46,15 @@ struct BlockingDiagnosticsView: View {
                          "Authorization: \(AuthorizationCenter.shared.authorizationStatus)",
                          "Registered activities: \(native.count)", "Lists: \(groups.count); blocks: \(blocks.count)",
                          "Settings readback is not proof of effective shielding."]
+            if let error = BlockStore.shared.loadError ?? AppGroupStore.shared.loadError { lines.append("Saved data: \(error)") }
+            if AuthorizationCenter.shared.authorizationStatus != .approved {
+                lines.append("Screen Time is not authorized. Any matched readback below describes saved settings only; it does not establish protection.")
+            }
+            if let session = AdHocMonitoring.session {
+                lines += ["Temporary session: \(session.id.uuidString.prefix(8)); registered: \(session.registered != false)",
+                          "Temporary session deadline: \(session.endsAt)",
+                          "Temporary registration pending: \(MonitorRegistration.pending("adhoc.\(session.id.uuidString)") != nil)"]
+            } else { lines.append("Temporary session: none") }
             for block in blocks {
                 let tokens = BlockResolution.tokens(for: block, groups: groups)
                 let activity = UsageMonitoring.usageActivityName(for: block.id)
@@ -60,6 +69,13 @@ struct BlockingDiagnosticsView: View {
                           "Schedule: \(block.schedule?.summary ?? "none")",
                           "Lock deadline: \(SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) ?? "none")",
                           "Last shield audit: \(SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldAudit(blockID: block.id)) ?? "none")"]
+                lines += ["Break deadline: \(BreakMonitoring.breakEnd(blockID: block.id)?.description ?? "none")",
+                          "Break awaiting confirmation: \(BreakMonitoring.pendingEnd(blockID: block.id)?.description ?? "none")",
+                          "Break used this activation: \(BreakMonitoring.breakUsed(blockID: block.id))"]
+                for prefix in ["block", "usage", "lock", "break"] {
+                    lines.append("\(prefix) registration pending: \(MonitorRegistration.pending("\(prefix).\(block.id.uuidString)") != nil)")
+                }
+                if tokens.isEmpty && tokens.domains.isEmpty { lines.append("No targets: matching empty settings does not establish protection.") }
                 for key in [SharedDefaults.Keys.shieldError(blockID: block.id), SharedDefaults.Keys.usageError(blockID: block.id), SharedDefaults.Keys.usageLockError(blockID: block.id)] {
                     if let error = SharedDefaults.suite.string(forKey: key) { lines.append("Error: \(error)") }
                 }

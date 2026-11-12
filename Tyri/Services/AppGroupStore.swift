@@ -117,7 +117,7 @@ class AppGroupStore: ObservableObject {
             loadError = nil
         } catch {
             print("❌ Failed to decode groups: \(error)")
-            loadError = "Saved lists could not be read. Your original data has been kept. Reopen Tyri to retry."
+            loadError = "Saved lists could not be read. Your original data has been kept. Open Settings for diagnostics or Emergency Access. Update Tyri if this data came from a newer version."
         }
     }
 }

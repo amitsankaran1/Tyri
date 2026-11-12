@@ -43,6 +43,7 @@ class BreakManager: ObservableObject {
         !isStarting && block.type != .timer
             && block.breakMinutes > 0
             && !BreakMonitoring.breakUsed(blockID: block.id)
+            && BreakMonitoring.pendingEnd(blockID: block.id) == nil
             && !isOnBreak(blockID: block.id)
             && activeBreak == nil
     }
@@ -65,7 +66,12 @@ class BreakManager: ObservableObject {
                 BreakMonitoring.startBreak(blockID: block.id, minutes: block.breakMinutes)
             }) ?? false
             isStarting = false
-            lastError = succeeded ? nil : "The automatic re-lock could not be scheduled. Your block is still on. Please try again."
+            if succeeded || BreakMonitoring.isOnBreak(blockID: block.id) { lastError = nil }
+            else if BreakMonitoring.pendingEnd(blockID: block.id) != nil {
+                lastError = "Your break is waiting for iOS to confirm its automatic re-lock. Apps stay blocked until then. Reopen Tyri to resume confirmation; the original end time still applies."
+            } else {
+                lastError = "The automatic re-lock could not be scheduled. Your block is still on. Please try again."
+            }
             publishPersistedState()
             SchedulingManager.shared.refresh()
         }
@@ -105,6 +111,7 @@ class BreakManager: ObservableObject {
         for block in BlockStore.shared.blocks {
             guard let endsAt = BreakMonitoring.breakEnd(blockID: block.id) else { continue }
             if endsAt > now {
+                lastError = nil
                 activeBreak = ActiveBreak(blockID: block.id, endsAt: endsAt)
                 startTickTimer()
                 return

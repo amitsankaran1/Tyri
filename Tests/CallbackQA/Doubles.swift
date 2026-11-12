@@ -52,7 +52,8 @@ enum BlockResolution {
  struct Tokens { var apps: Set<Int> = [1]; var categories: Set<Int> = []; var webDomains: Set<Int> = []; var domains: Set<String> = ["example.com"]; var isEmpty: Bool { false } }
  static var blocks: [UUID: BlockRule] = [:]
  static func loadBlock(id: UUID) -> BlockRule? { blocks[id] }
- static func loadGroups() -> [AppGroup] { [] }
+ static func tokens(forBlockID id: UUID) -> Tokens? { blocks[id].map { _ in Tokens() } }
+ static func loadGroups() -> [AppGroup]? { [] }
  static func tokens(for block: BlockRule, groups: [AppGroup]) -> Tokens { Tokens() }
 }
 enum State { static var shield = false; static var shields: Set<UUID> = [] }

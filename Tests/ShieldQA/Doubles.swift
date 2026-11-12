@@ -52,15 +52,17 @@ enum SharedDefaults {
   static func shieldError(blockID:UUID)->String {"shieldError.\(blockID)"}
  }
 }
-struct BlockRule { enum Kind {case schedule,timer};let id:UUID;var type:Kind = .timer;var schedule:Schedule?=nil }
+struct QAGroup { var id = UUID() }
+struct BlockRule {var appGroupIDs: Set<UUID> = []; enum Kind {case schedule,timer};let id:UUID;var type:Kind = .timer;var schedule:Schedule?=nil }
 struct Schedule {var weekdays:Set<Int>=[]}
 enum BlockResolution {
+ static func loadBlocks() -> [BlockRule]? { [] }
  struct Tokens: Codable, Equatable {var apps:Set<Int>=[];var categories:Set<Int>=[];var webDomains:Set<Int>=[];var domains:Set<String>=[]}
  static var selection=Tokens()
  static var missing: Set<UUID> = []
  static func loadBlock(id:UUID)->BlockRule? {missing.contains(id) ? nil : BlockRule(id:id)}
- static func loadGroups()->[Int] {[]}
- static func tokens(for block:BlockRule,groups:[Int])->Tokens {selection}
+ static func loadGroups()->[QAGroup]? {[]}
+ static func tokens(for block:BlockRule,groups:[QAGroup])->Tokens {selection}
 }
 enum BreakMonitoring {static func resetAllowance(blockID:UUID, stopMonitoring:Bool = true) {}}
 @main struct Tests {

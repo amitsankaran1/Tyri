@@ -14,6 +14,8 @@ struct UsageDurationPicker: View {
                 Text(Self.label(minutes)).monospacedDigit()
             }
         }
+        .accessibilityLabel(title)
+        .accessibilityValue(Self.label(minutes))
         .accessibilityIdentifier(title == "Allow usage for" ? "usage-duration" : "lock-duration")
         .sheet(isPresented: $editing) {
             DurationEditor(title: title, initial: minutes) { minutes = $0 }
@@ -21,7 +23,7 @@ struct UsageDurationPicker: View {
     }
 
     static func label(_ minutes: Int) -> String {
-        String(format: "%02d:%02d", minutes / 60, minutes % 60)
+        BlockEditorView.minutesLabel(minutes)
     }
 }
 

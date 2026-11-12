@@ -4,6 +4,9 @@ struct TagRegistrationView: View {
     @StateObject private var nfc = NFCManager.shared
     @StateObject private var config = AppConfigurationStore.shared
 
+    @StateObject private var blocks = BlockStore.shared
+    @State private var confirmDisconnect = false
+
     var body: some View {
         Form {
             Section {
@@ -17,7 +20,12 @@ struct TagRegistrationView: View {
             }
             Section {
                 if config.isTagRegistered {
-                    Button("Disconnect tag", role: .destructive) { config.clearTagRegistration() }
+                    Button("Disconnect tag", role: .destructive) { confirmDisconnect = true }
+                        .disabled(!config.canDisconnectTag)
+                    if !config.canDisconnectTag {
+                        Text("Stop your tag blocks with your current tag or Emergency Access before disconnecting it.")
+                            .foregroundStyle(.secondary)
+                    }
                 } else if nfc.isScanning {
                     ProgressView("Looking for your tag…")
                     Button("Cancel scan") { nfc.stopScanning() }
@@ -36,5 +44,11 @@ struct TagRegistrationView: View {
         .navigationTitle("NFC tag")
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear { nfc.stopScanning() }
+        .confirmationDialog("Disconnect your NFC tag?", isPresented: $confirmDisconnect, titleVisibility: .visible) {
+            Button("Disconnect tag", role: .destructive) { config.clearTagRegistration() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("You’ll need to connect a tag again before starting tag blocks.")
+        }
     }
 }

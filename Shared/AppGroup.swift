@@ -70,7 +70,7 @@ struct AppGroup: Identifiable, Codable, Equatable {
         // date until the next save stamps a real value.
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         if let data = try c.decodeIfPresent(Data.self, forKey: .selectionData) {
-            selection = (try? JSONDecoder().decode(FamilyActivitySelection.self, from: data)) ?? FamilyActivitySelection()
+            selection = try JSONDecoder().decode(FamilyActivitySelection.self, from: data)
         } else {
             selection = FamilyActivitySelection()
         }

@@ -98,8 +98,8 @@ enum BreakMonitoring {
         let windowEnd = now.addingTimeInterval(TimeInterval(max(15, minutes) * 60))
         let cal = Calendar.current
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now),
-            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: windowEnd),
+            intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: now),
+            intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: windowEnd),
             repeats: false,
             warningTime: minutes < 15 ? DateComponents(minute: 15 - max(1, minutes)) : nil
         )
@@ -142,8 +142,8 @@ enum BreakMonitoring {
             let monitorEnd = max(end, start.addingTimeInterval(900))
             let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
             let schedule = DeviceActivitySchedule(
-                intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
-                intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+                intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+                intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
                 repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
             let base = "break.\(blockID.uuidString)"
             let context = registrationContext(blockID: blockID, end: end)

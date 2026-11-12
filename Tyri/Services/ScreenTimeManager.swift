@@ -118,10 +118,11 @@ class ScreenTimeManager: ObservableObject {
             if block.isEnabled { BlockStore.shared.setEnabled(id: block.id, enabled: false) }
         }
         BlockStore.shared.flush()
-        for block in blocks {
-            clearBlockShield(id: block.id)
-            UsageMonitoring.stopLockout(for: block.id)
-            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: block.id))
+        let owners = BlockingActuator.persistedOwnerIDs.union(blocks.map(\.id))
+        for id in owners {
+            clearBlockShield(id: id)
+            UsageMonitoring.stopLockout(for: id)
+            SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.running(blockID: id))
         }
         UsageLimitManager.shared.reapplyAllUsageLimits()
         CooldownManager.shared.cancel()

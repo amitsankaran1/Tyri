@@ -58,6 +58,9 @@ class BlockStore: ObservableObject {
             defaults.removeObject(forKey: SharedDefaults.Keys.cooldownEnd(blockID: block.id))
             defaults.removeObject(forKey: SharedDefaults.Keys.cooldownActivation(blockID: block.id))
         }
+        if defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) != nil {
+            defaults.set(block.isEnabled, forKey: "usageLockManual.\(block.id)")
+        }
         blocks[idx] = block
         save()
     }
@@ -129,7 +132,7 @@ class BlockStore: ObservableObject {
             loadError = nil
         } catch {
             print("❌ Failed to decode blocks: \(error)")
-            loadError = "Saved blocks could not be read. Your original data has been kept. Reopen Tyri to retry."
+            loadError = "Saved blocks could not be read. Your original data has been kept. Open Settings for diagnostics or Emergency Access. Update Tyri if this data came from a newer version."
         }
     }
 }

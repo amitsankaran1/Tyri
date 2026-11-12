@@ -129,11 +129,22 @@ class AppConfigurationStore: ObservableObject {
     }
 
     func registerTag(identifier: String) {
+        guard let lease = EnforcementTransaction.begin() else { return }
+        defer { lease.finish() }
+        guard registeredTagIdentifier == identifier || canDisconnectTag else { return }
         registeredTagIdentifier = identifier
         defaults.set(identifier, forKey: registeredTagKey)
     }
 
+    var canDisconnectTag: Bool {
+        guard let blocks = BlockResolution.loadBlocks() else { return false }
+        return !blocks.contains { $0.type == .tag && $0.isEnabled }
+    }
+
     func clearTagRegistration() {
+        guard let lease = EnforcementTransaction.begin() else { return }
+        defer { lease.finish() }
+        guard canDisconnectTag else { return }
         registeredTagIdentifier = nil
         defaults.removeObject(forKey: registeredTagKey)
     }

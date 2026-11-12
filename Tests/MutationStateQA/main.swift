@@ -1,4 +1,5 @@
 import Foundation
+enum BlockingActuator { static var persistedOwnerIDs: Set<UUID> = [] }
 struct Schedule {var active=true;func activeWindow()->Int?{active ? 1:nil}}
 struct BlockRule {enum Kind{case timer,schedule,tag};var id=UUID();var type:Kind = .timer;var appGroupIDs:[UUID]=[];var isEnabled=false;var schedule:Schedule?}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-mutation-\(UUID())")!;enum Keys{static func running(blockID:UUID)->String{"running.\(blockID)"};static func usageLockEnd(blockID:UUID)->String{"lock.\(blockID)"};static func scheduleReleasedUntil(blockID:UUID)->String{"release.\(blockID)"}}}
@@ -11,7 +12,7 @@ class BlockStore {
  func flush(){persisted=blocks}
 }
 class GroupStore {func delete(id:UUID){};func flush(){}}
-class ScreenTimeManager {static let shared=ScreenTimeManager();func clearBlockShield(id:UUID){}}
+class ScreenTimeManager {static let shared=ScreenTimeManager();var cleared: Set<UUID> = [];func clearBlockShield(id:UUID){cleared.insert(id)}}
 enum ScheduleEnforcement {static func releaseCurrentWindow(block:BlockRule){}}
 enum UsageMonitoring {static func stopLockout(for id:UUID){SharedDefaults.suite.removeObject(forKey:SharedDefaults.Keys.usageLockEnd(blockID:id))}}
 class UsageLimitManager {
@@ -42,6 +43,12 @@ class BlockEditor {var blockID=UUID();var showActiveDeleteAlert=false;let blockS
   ScreenTimeManager.shared.disableAllBlocks()
   check(UsageLimitManager.shared.monitors.contains(timer.id),"SM-03 emergency release rearms consumed timer allowance")
   check(BlockStore.shared.persisted.first?.isEnabled == false,"SM-03 emergency release commits manual-off before returning")
+  let unreadableOwner = UUID()
+  BlockStore.shared.blocks = []
+  BlockingActuator.persistedOwnerIDs = [unreadableOwner]
+  SharedDefaults.suite.set(Date().addingTimeInterval(300), forKey: SharedDefaults.Keys.usageLockEnd(blockID: unreadableOwner))
+  ScreenTimeManager.shared.disableAllBlocks()
+  check(ScreenTimeManager.shared.cleared.contains(unreadableOwner) && SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: unreadableOwner)) == nil, "Emergency Access releases persisted owners even when rules cannot be loaded")
   let scheduled=BlockRule(type:.schedule,schedule:Schedule())
   check(ScreenTimeManager.shared.isBlockActive(scheduled),"SM-06 calendar ownership protects edits before start callback arrives")
   var ended=scheduled;ended.schedule=Schedule(active:false);SharedDefaults.suite.set(true,forKey:SharedDefaults.Keys.running(blockID:ended.id))

@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory(prefix="tyri-foreground-recovery-") as director
     temp = Path(directory)
     base = (root / "Tests/CallbackQA/Doubles.swift").read_text().split("@main struct CallbackQA")[0]
     base = base.replace("static func reconcile(block: BlockRule, stopMonitoring:", "static func reconcile(block: BlockRule, now: Date = Date(), stopMonitoring:")
-    base = base.replace("enum BlockingActuator {", "enum BlockingActuator { static var pending: UUID?; static func replayPending() { if let id = pending { State.shields.insert(id) } }; static func setEffectsEnabled(_ active: Bool) {}")
+    base = base.replace("enum BlockingActuator {", "enum BlockingActuator { static var persistedOwnerIDs: Set<UUID> { Set(BlockResolution.blocks.keys) }; static var pending: UUID?; static func replayPending() { if let id = pending { State.shields.insert(id) } }; static func setEffectsEnabled(_ active: Bool) {}")
     base = base.replace("static func reconcile(block: BlockRule, now: Date = Date(), stopMonitoring: Bool = true) {}", "static func reconcile(block: BlockRule, now: Date = Date(), stopMonitoring: Bool = true) { if Probe.outsideSchedule { BlockingActuator.pending = nil; State.shields.remove(block.id) } }")
     base = base.replace("Self.events[name] = events", "Self.events[name] = events; try Probe.afterStart(name)")
     (temp / "Doubles.swift").write_text(base)

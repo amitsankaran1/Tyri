@@ -26,7 +26,8 @@ enum ScheduleEnforcement {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
 
-        guard block.type == .schedule else { return }
+        guard block.type == .schedule, let groups = BlockResolution.loadGroups(),
+              Set(block.appGroupIDs).isSubset(of: Set(groups.map(\.id))) else { return }
         let defaults = SharedDefaults.suite
         let runningKey = SharedDefaults.Keys.running(blockID: block.id)
         let windowKey = SharedDefaults.Keys.scheduleWindowStart(blockID: block.id)
@@ -45,7 +46,7 @@ enum ScheduleEnforcement {
             defaults.set(window.start, forKey: windowKey)
             defaults.set(true, forKey: runningKey)
             if !BreakMonitoring.isOnBreak(blockID: block.id) {
-                BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()),
+                BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups),
                                        blockID: block.id)
             }
         } else {
@@ -57,7 +58,7 @@ enum ScheduleEnforcement {
             // Ending a schedule must not lift an independent manual activation.
             if block.isEnabled {
                 if !BreakMonitoring.isOnBreak(blockID: block.id) {
-                    BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: BlockResolution.loadGroups()),
+                    BlockingActuator.apply(tokens: BlockResolution.tokens(for: block, groups: groups),
                                            blockID: block.id)
                 }
             } else {

@@ -48,8 +48,8 @@ enum AdHocMonitoring {
         guard !item.tokens.isEmpty || !item.tokens.domains.isEmpty else { throw SessionError.emptyList }
         let cal = Calendar.current
         let schedule = DeviceActivitySchedule(
-            intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
-            intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: item.endsAt), repeats: false)
+            intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+            intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: item.endsAt), repeats: false)
         // No shielding unless background expiry registration succeeds.
         try save(item)
         let base = "adhoc.\(item.id.uuidString)"
@@ -108,8 +108,8 @@ enum AdHocMonitoring {
                     let monitorEnd = max(item.endsAt, start.addingTimeInterval(900))
                     let warning = Int(ceil(monitorEnd.timeIntervalSince(item.endsAt)))
                     let schedule = DeviceActivitySchedule(
-                        intervalStart: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: start),
-                        intervalEnd: cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: monitorEnd),
+                        intervalStart: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: start),
+                        intervalEnd: cal.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: monitorEnd),
                         repeats: false, warningTime: warning > 0 ? DateComponents(second: warning) : nil)
                     let base = "adhoc.\(item.id.uuidString)"
                     guard let ticket = MonitorRegistration.reserve(base, legacyName: base, context: registrationContext(item)) else { reservation.finish(); return }

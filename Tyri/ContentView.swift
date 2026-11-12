@@ -16,11 +16,12 @@ struct ContentView: View {
                 .tag(1)
         }
         .tint(.blue)
-        .overlay(alignment: .top) {
+        .safeAreaInset(edge: .top, spacing: 0) {
             if let error = blocks.loadError ?? lists.loadError {
                 Text(error).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityIdentifier("saved-data-error")
-            } else if recovery.isChecking {
+                    .allowsHitTesting(false)
+            } else if recovery.isChecking && !recovery.hasChecked {
                 ProgressView("Checking saved blocks…")
                     .padding()
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
