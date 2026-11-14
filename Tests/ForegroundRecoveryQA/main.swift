@@ -234,6 +234,12 @@ extension BlockingSchedule {
         recovery.setActive(true)
         try await wait { !recovery.isChecking }
         let retained = UsageMonitoring.usageActivityName(for: queued)
+        for event in ["registrationRequest", "registrationReturn", "publication"] {
+            let record = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key(event, queued)) ?? ""
+            precondition(record.contains(retained.rawValue), "Diagnostic omitted current allowance identity: \(event)")
+        }
+        let foreground = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("recovery", queued)) ?? ""
+        precondition(foreground.contains("Foreground admitted at"), "No foreground correlation timestamp")
         precondition(recovery.hasChecked && recovery.registeredUsageIDs.contains(queued))
         recovery.requestAccepted()
         precondition(recovery.registeredUsageIDs.contains(queued), "Unrelated Save discarded a healthy presentation")

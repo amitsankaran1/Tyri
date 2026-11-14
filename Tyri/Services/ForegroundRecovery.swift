@@ -12,7 +12,8 @@ nonisolated private struct RecoveryJob: @unchecked Sendable {
     let schedule: DeviceActivitySchedule
     var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
     var fallback: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
-    func execute() -> (succeeded: Bool, reportsProgress: Bool, error: String?) {
+    func execute() -> (succeeded: Bool, reportsProgress: Bool, error: String?, requestedAt: Date, returnedAt: Date) {
+        let requestedAt = Date()
         precondition(!Thread.isMainThread)
         let center = DeviceActivityCenter()
         let name = DeviceActivityName(rawValue: ticket.name)
@@ -21,10 +22,10 @@ nonisolated private struct RecoveryJob: @unchecked Sendable {
             do { try center.startMonitoring(name, during: schedule, events: events) } catch {
                 guard !fallback.isEmpty, EnforcementTransaction.effectsAreEnabled else { throw error }
                 try center.startMonitoring(name, during: schedule, events: fallback)
-                return (true, false, nil)
+                return (true, false, nil, requestedAt, Date())
             }
-            return (true, !events.isEmpty, nil)
-        } catch { return (false, false, error.localizedDescription) }
+            return (true, !events.isEmpty, nil, requestedAt, Date())
+        } catch { return (false, false, error.localizedDescription, requestedAt, Date()) }
     }
 }
 
@@ -35,6 +36,7 @@ final class ForegroundRecovery: ObservableObject {
     @Published private(set) var registeredUsageIDs: Set<UUID> = []
     @Published private(set) var hasChecked = false
     private var active = true
+    private var lastActivation: Date?
     // Explicit user mutations own a bounded completion window. Routine refresh
     // does not: it stops on resignation. Expiration revokes both kinds of work.
     private var acceptedWork = false
@@ -131,6 +133,7 @@ final class ForegroundRecovery: ObservableObject {
     /// Durable reservations let the next activation reconcile interrupted work.
     func setActive(_ value: Bool) {
         active = value
+        if value { lastActivation = Date() }
         BlockingActuator.setEffectsEnabled(value || acceptedWork || !commands.isEmpty)
         EnforcementTransaction.setEffectsEnabled(value || acceptedWork || !commands.isEmpty)
         SchedulingManager.shared.setForegroundActive(value)
@@ -263,8 +266,13 @@ final class ForegroundRecovery: ObservableObject {
                     try await retire(observed: observed)
                     for job in jobs {
                         let valid = try await withLease {
-                            context(job.ticket.namespace) == job.ticket.owner.context
+                            let valid = context(job.ticket.namespace) == job.ticket.owner.context
                                 && MonitorRegistration.pending(job.ticket.namespace)?.owner == job.ticket.owner
+                            if valid, let id = Self.blockID(job.ticket.namespace) {
+                                EnforcementDiagnostics.record("registrationRequest", blockID: id,
+                                    detail: "App recovery dispatch: \(job.ticket.name)")
+                            }
+                            return valid
                         }
                         guard valid else {
                             try await withLease { _ = MonitorRegistration.finish(job.ticket, context: nil, succeeded: false) }
@@ -273,6 +281,10 @@ final class ForegroundRecovery: ObservableObject {
                         let outcome = await Task.detached { job.execute() }.value
                         try await withLease {
                             let result = completeRegistration(job.ticket, succeeded: outcome.succeeded)
+                            if let id = Self.blockID(job.ticket.namespace) {
+                                EnforcementDiagnostics.record("registrationReturn", blockID: id,
+                                    detail: "App recovery result committed: \(job.ticket.name); requested: \(ISO8601DateFormatter().string(from: outcome.requestedAt)); returned: \(ISO8601DateFormatter().string(from: outcome.returnedAt)); succeeded: \(outcome.succeeded); publication: \(result)")
+                            }
                             if result == .promoted || result == .alreadyAccepted { observed.insert(job.ticket.name) }
                             if result == .promoted || result == .alreadyAccepted,
                                 let id = Self.blockID(job.ticket.namespace)
@@ -397,6 +409,10 @@ final class ForegroundRecovery: ObservableObject {
         }
         guard let blocks = BlockResolution.loadBlocks() else { return changed }
         for block in blocks {
+            if let lastActivation {
+                EnforcementDiagnostics.record("recovery", blockID: block.id,
+                    detail: "Foreground admitted at \(ISO8601DateFormatter().string(from: lastActivation)); state reconciliation")
+            }
             if block.type == .schedule { ScheduleEnforcement.reconcile(block: block, now: now, stopMonitoring: false) }
             if block.type != .schedule {
                 let locked = block.type == .timer &&

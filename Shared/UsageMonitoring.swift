@@ -54,6 +54,7 @@ enum UsageMonitoring {
     private static func publishGeneration(_ name: String, blockID: UUID) {
         SharedDefaults.suite.set(String(name.dropFirst("usage.\(blockID.uuidString).".count)), forKey: SharedDefaults.Keys.usageGeneration(blockID: blockID))
         SharedDefaults.suite.removeObject(forKey: UsageProgress.key(blockID))
+        EnforcementDiagnostics.record("publication", blockID: blockID, detail: "Allowance generation published: \(name)")
     }
 
     static func acceptRegistration(_ name: String, for block: BlockRule, groups: [AppGroup]) -> Bool {
@@ -134,6 +135,8 @@ enum UsageMonitoring {
         let previous = MonitorRegistration.load("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context)
         let oldNames = [previous?.confirmed?.name, previous?.pending?.name].compactMap { $0 }
         guard let ticket = MonitorRegistration.reserve("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context) else { return false }
+        EnforcementDiagnostics.record("registrationRequest", blockID: block.id,
+            detail: "Expiry rearm queued: \(ticket.name)")
         let result = MonitorResult()
         EnforcementTransaction.afterUnlock(key: ticket.name) {
             guard EnforcementTransaction.effectsAreEnabled else { return }
@@ -148,6 +151,7 @@ enum UsageMonitoring {
             if center.activities.count >= 20 && !oldActivities.isEmpty {
                 center.stopMonitoring(oldActivities)
             }
+            let requestedAt = Date()
             do {
                 var reportsProgress = true
                 do {
@@ -159,8 +163,11 @@ enum UsageMonitoring {
                     try center.startMonitoring(activity, during: allDaySchedule, events: [usageEventName: event])
                     reportsProgress = false
                 }
+                let returnedAt = Date()
                 guard let commit = EnforcementTransaction.beginEffect() else { return }
                 let accepted = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: true)
+                EnforcementDiagnostics.record("registrationReturn", blockID: block.id,
+                    detail: "Expiry rearm result committed: \(ticket.name); requested: \(ISO8601DateFormatter().string(from: requestedAt)); returned: \(ISO8601DateFormatter().string(from: returnedAt)); succeeded: true; publication: \(accepted)")
                 guard accepted == .promoted || accepted == .alreadyAccepted else { commit.finish(); center.stopMonitoring([activity]); return }
                 if !reportsProgress && accepted == .promoted { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
                 EnforcementDiagnostics.record("registration", blockID: block.id, detail: "Registered allowance; progress events: \(reportsProgress)")
@@ -170,9 +177,12 @@ enum UsageMonitoring {
                 commit.finish()
                 center.stopMonitoring(oldActivities)
             } catch {
+                let returnedAt = Date()
                 guard let commit = EnforcementTransaction.beginEffect() else { return }
                 defer { commit.finish() }
                 let completion = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: false)
+                EnforcementDiagnostics.record("registrationReturn", blockID: block.id,
+                    detail: "Expiry rearm result committed: \(ticket.name); requested: \(ISO8601DateFormatter().string(from: requestedAt)); returned: \(ISO8601DateFormatter().string(from: returnedAt)); succeeded: false; publication: \(completion)")
                 guard completion == .failed else { return }
                 SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",
                                          forKey: SharedDefaults.Keys.usageError(blockID: block.id))
@@ -326,6 +336,8 @@ enum UsageMonitoring {
         defer { lease.finish() }
         guard let end = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: blockID)) as? Date,
               end <= now else { return }
+        EnforcementDiagnostics.record("expiry", blockID: blockID,
+            detail: "Lock deadline reached: \(ISO8601DateFormatter().string(from: end)); rearm requested: \(stopMonitoring)")
         let manualSnapshot = SharedDefaults.suite.object(forKey: "usageLockManual.\(blockID)") as? Bool
         stopLockout(for: blockID, stopMonitoring: stopMonitoring)
         let block = BlockResolution.loadBlock(id: blockID)

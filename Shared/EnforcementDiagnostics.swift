@@ -2,7 +2,8 @@ import Foundation
 
 /// Bounded, on-device troubleshooting records. No app tokens or browsing history.
 enum EnforcementDiagnostics {
-    static let events = ["callback", "threshold", "registration", "shield", "recovery"]
+    static let events = ["callback", "threshold", "registration", "shield", "recovery",
+                         "registrationRequest", "registrationReturn", "publication", "expiry"]
     static func key(_ event: String, _ blockID: UUID) -> String { "enforcementDiagnostic.\(blockID.uuidString).\(event)" }
     static func record(_ event: String, blockID: UUID, detail: String) {
         guard events.contains(event) else { return }

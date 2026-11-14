@@ -1,0 +1,68 @@
+# Blocking lifecycle investigation and acceptance gaps
+
+Inspected baseline: `a9c222505b8c1f83b3bd6eb8c9db9b47dbba2698`, current main on November 14, 2026. **The source delivered as 2.4 (37) remains unverified**; see [provenance](PROVENANCE.md). This audit does not establish the cause of the reported recurrence or claim it fixed. Final execution results belong in the progress/check records, not inferred from test-file presence.
+
+## Production path
+
+1. `BlockEditorView.save` validates the draft under `EnforcementTransaction`, updates `BlockStore`, and flushes saved rules before `ForegroundRecovery.requestAccepted`. Its final lease release hands native effects to the recovery service off MainActor. Rule persistence is distinct from successful registration.
+2. `requestAccepted` owns a bounded background assertion. `request` reconciles deadlines and shield intent, checks storage and authorization, and coalesces concurrent requests with `rerunRequested`. An expired assertion closes admission; a later activation reconciles durable state.
+3. `ForegroundRecovery.makePlan` derives semantic context from persisted rules and selections. Observed matching pending registrations are promoted; observed matching confirmed registrations are retained. Only missing/mismatched owners receive a new reservation. A healthy allowance is not restarted on reopen.
+4. `RecoveryJob.execute` invokes `DeviceActivityCenter.startMonitoring` off MainActor and outside the file lease. Optional progress-event failure falls back to the limit event. Native return is not proof of actual usage counting.
+5. Completion reloads context and reservation identity. `MonitorLedger` rejects obsolete completions; a callback can promote a pending owner before native return. Usage generation publication clears old progress without inventing a reported zero.
+6. `TyriMonitorExtension.eventDidReachThreshold` loads the saved rule and groups, accepts the generation, records valid progress events, or calls `UsageMonitoring.startLockout` for the limit. `startLockout` preserves an existing future deadline, otherwise persists a fixed deadline and shield intent, retires the consumed allowance, and registers lock expiry.
+7. Shield writes run after releasing the state lease. `BlockingActuator` persists revisioned intent, rechecks ownership on completion, and retries pending intent. Settings readback establishes settings agreement only; it does not establish an effective shield on a target.
+8. Lock callbacks reconcile the persisted deadline, not callback order. Early/duplicate callbacks cannot shorten or extend the deadline. On expiry, `releaseExpiredLock` clears timed ownership, preserves manual ownership, and rearms a fresh allowance when no current usage monitor or pending owner exists. Foreground recovery separately handles missed expiry/rearm.
+
+## Evidence and competing explanations
+
+The reported sequence is reopen → usage counts → block after another ten minutes. Exact reopen time, selected target, and preceding transition remain unknown. The 17:43:52 registration, 21:43:21 threshold, 21:43:22 lock start, and 21:47:45 settings readback do not establish counting onset or effective shielding.
+
+On the inspected revision, the exact diagnostic `Registered allowance; progress events: true` comes only from `UsageMonitoring.startUsageMonitor`. Its sole production caller is the expiry-rearm path. Ordinary Save registration uses `ForegroundRecovery` and did not emit that diagnostic. **Conditional inference:** if build37 uses this code, the recorded registration points toward the next allowance after an earlier lock. Build attribution must be confirmed before treating this as the device's actual transition.
+
+| Explanation | Evidence that would discriminate | Present conclusion |
+| --- | --- | --- |
+| Save/recovery did not complete before suspension | Save/admission, native request/return, reservation/publication and foreground times | Earlier fixes cover several interruptions in doubles; recurrence not reproduced |
+| Expiry rearmed but native counting/callback delivery stalled | Exact source, expiry and allowance generation, callback log before reopen, target usage timestamps | Plausible given diagnostic origin; not proven |
+| Native all-day interval behaves differently on affected OS | Release-device reproduction using same generation without foreground, compared to documented behavior | No evidence justifies changing the schedule |
+| Generation or late completion replaced a working counter | Correlated reservation/publication identities and injected interleavings | Existing tests and added stress preserve healthy/current identities |
+| Shield was delayed despite timely threshold | Actual target shield observation vs threshold/foreground times | Cannot infer from settings readback; does not alone explain subsequent ten-minute counting |
+| Target selection or authorization differed | User checks the selected target and approved authorization; sanitized target counts | Selection identities intentionally not logged; device verification pending |
+
+Apple documents callbacks beginning when registration occurs during an ongoing interval, and schedule initialization documents an immediate interval-start callback when the current time lies inside it. This contradicts treating “midday registration must wait until midnight” as an established platform rule. Apple also documents that registering an existing activity overwrites its schedule/events, reinforcing the need to preserve healthy registrations. These documents describe the API contract, not proof that the affected device followed it. Sources: [startMonitoring](https://developer.apple.com/documentation/deviceactivity/deviceactivitycenter/startmonitoring(_:during:events:)), [schedule initializer](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/init(intervalstart:intervalend:repeats:warningtime:)).
+
+## Scenario matrix
+
+Test harnesses compile production logic with explicit native doubles or extract production methods; they are not physical acceptance. Existing suites below were inspected for coverage. Their final pass/fail status must be taken from the final revision's check log.
+
+| Area / invariant | Automated coverage | Remaining boundary |
+| --- | --- | --- |
+| Save during registration/recovery; immediate background; expiration and retry | `ForegroundRecoveryQA`: stalled native calls, queued final-observation Save, inactive Save, assertions, expiration | Real suspension/force-quit and native IPC timing |
+| Initial and repeated 10/180 cycles; no premature or permanent timed lock | New `CallbackLifecycleStressQA`: 100 cycles, fixed deadlines, early/end/warning callbacks, fresh next allowance | Real ten-minute use and three-hour expiry without reopening |
+| Healthy counter survives reopening | `ForegroundRecoveryQA` retains matching observed monitor; callback stress rejects stale reset | Native counter contents cannot be read by these doubles |
+| Stale, duplicate, out-of-order callbacks and generations | New callback stress: 2,767 transitions at seed `370026601`; `LifecycleStressQA`: production-ledger property traces | OS callback scheduling/delivery; actual multi-process extension lifetime |
+| Cancellation, partial failures, late success, app/extension races | `ForegroundRecoveryQA`, `CallbackQA`, `StateMachineQA`, `MonitorLedgerQA` | Interrupted native operations on device; not crash-atomic across APIs/preferences |
+| Midday, midnight, DST, timezone | `ScheduleWindowTests` tests calendar windows, including DST; UTC deadline code inspected | Native usage-counter reset and timezone-change behavior remain untested |
+| Usage, manual, schedule, breaks, temporary sessions and cooldown overlap | `StateMachineQA`, `MutationStateQA`, `ScheduleStateQA`; callback stress preserves manual and unrelated owners | Physical shield union, native timing and long background lifetimes |
+| Selection edits and deleted/referenced lists | `MutationStateQA`, `UnreadableStoreQA` check replacement/persistence and preserve missing-list protection | Real app/category/web token semantics and picker changes |
+| Shared data unavailable/corrupt; interrupted writes and upgrades | `StoreDurabilityQA`, `UnreadableStoreQA`, `MigrationStateQA`, `TransactionQA` | Device-protected storage while locked; crash at every write boundary not exhaustively covered |
+| Authorization revoked/regranted | `ActivationQA` checks revoked admission; recovery source guards authorization | OS revoke/regrant, lost native monitors, and real shield restoration |
+| Emergency Access and tag boundaries | `MutationStateQA`, `ForegroundRecoveryQA`, `NFCStateQA` | Real NFC; lost-tag feature remains deferred |
+| No UI assertion of unproven enforcement | Existing presentation suites; pending-vs-reported state inspected | Final simulator/UI results and captioned screenshots recorded separately; no device claim from screenshots |
+| No native IPC under file lease/MainActor; suspension admission | `NativeBoundaryQA`, `SuspensionLockQA`, `TransactionQA`, `ForegroundRecoveryQA` | Native IPC itself may stall; unavailable-storage follow-up is separately reviewed |
+
+New callback stress passed against current-main production logic with native doubles. It is replayable with `TYRI_CALLBACK_SEED=370026601 python3 Tests/CallbackLifecycleStressQA/run.py`. On failure it prints a cycle-local trace. The separate ledger stress suite supplies deletion-minimized failing operation traces. Neither suite reproduced the reported device recurrence.
+
+## Physical-device acceptance: pending
+
+No suitable authorized physical-device test was completed. Do not change existing real restrictions, reset data, or distribute a candidate as part of these steps without the separate authorization required for the named revision.
+
+After an approved release/TestFlight candidate is available:
+
+1. Record version/build, exact source receipt, iOS version, timezone, and authorization status. Use the existing selected app only with Amit's authorization. Run without an attached debugger.
+2. Save 10-minute allowance / 180-minute lock. Record Save time and immediately leave Tyri. Do not reopen it. Use the selected app beyond ten minutes, recording start/end times and the first actual shield appearance.
+3. Verify the target is actually blocked. Record when shielding starts. Collect diagnostics only after the shield observation, noting the exact Tyri reopen time so foreground recovery cannot be mistaken for independent enforcement.
+4. Leave Tyri closed through the original 180-minute deadline. Verify the selected app becomes usable at that deadline; do not shorten the lock or reset configuration.
+5. Use the app for another ten minutes without reopening Tyri. Verify a second actual shield and the new fixed lock deadline. Record the second generation/registration/callback times afterward.
+6. Correlate foreground, registration request/native-return/publication, expiry and threshold timestamps. If the failure recurs, preserve the diagnostics and exact target/preceding transition rather than resetting a healthy monitor.
+
+Build37 source verification and device acceptance remain external prerequisites for closing the original bug. A bounded related defect fix or stronger diagnostics does not establish that the reported recurrence is resolved.
