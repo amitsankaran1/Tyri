@@ -2,8 +2,8 @@ import Foundation
 struct FamilyActivitySelection:Codable {var includeEntireCategory=false;var applicationTokens:Set<Int>=[];var categoryTokens:Set<Int>=[];var webDomainTokens:Set<Int>=[]}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-migration-\(UUID())")!;enum Keys{static let presets="presets",migratedToBlocksV2="migrated"}}
 struct ManagedSettingsStore {struct Name{var rawValue:String};init(){};init(named:Name){};func clearAllSettings(){}}
-struct DeviceActivityName {var rawValue:String}
-struct DeviceActivityCenter {func stopMonitoring(_ names:[DeviceActivityName]){}}
+struct DeviceActivityName:Hashable {var rawValue:String}
+struct DeviceActivityCenter {static var registered:Set<DeviceActivityName>=[];func stopMonitoring(_ names:[DeviceActivityName]){if names.isEmpty {Self.registered.removeAll()};for name in names {Self.registered.remove(name)}}}
 enum BlockingActuator {@discardableResult static func start(blockID:UUID,bypassWeekday:Bool,setRunningFlag:Bool,resetBreakAllowance:Bool = true)->Bool{true}}
 final class ForegroundRecovery {static let shared=ForegroundRecovery();func retireLegacy(_ names:[String]){}}
 @MainActor class AppConfigurationStore {static let shared=AppConfigurationStore();var selectedApps=FamilyActivitySelection();var isBlockingEnabled=false}

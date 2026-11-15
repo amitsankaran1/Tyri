@@ -19,6 +19,7 @@ class DeviceActivityMonitor {
 struct DeviceActivityCenter {
  static var events: [DeviceActivityName: [DeviceActivityEvent.Name: DeviceActivityEvent]] = [:]
  static var schedules: [DeviceActivityName: DeviceActivitySchedule] = [:]
+ static var stopAllCalls = 0
  static var maxActivities = 20
  static var maxEvents = 1000
  static var fail = false
@@ -28,7 +29,8 @@ struct DeviceActivityCenter {
   if Self.fail || events.count > Self.maxEvents || (Self.schedules[name] == nil && Self.schedules.count >= Self.maxActivities) { throw NSError(domain: "QA", code: 1) }
   Self.starts += 1; Self.schedules[name] = schedule; Self.events[name] = events
  }
- func stopMonitoring(_ names: [DeviceActivityName]) { for n in names { Self.schedules[n] = nil } }
+ // Native contract: an empty argument stops every activity, not zero activities.
+ func stopMonitoring(_ names: [DeviceActivityName]) { if names.isEmpty { Self.stopAllCalls += 1; Self.schedules.removeAll(); Self.events.removeAll() }; for n in names { Self.schedules[n] = nil; Self.events[n] = nil } }
 }
 extension DeviceActivityEvent.Name: Hashable {}
 enum SharedDefaults {
@@ -129,9 +131,9 @@ enum ScheduleEnforcement {
   check(firstCycle != secondCycle && !DeviceActivityCenter().activities.contains(firstCycle), "expiry rotates and removes consumed allowance")
   monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: firstCycle)
   check(SharedDefaults.suite.object(forKey: key) == nil, "stale first-cycle threshold cannot consume new allowance")
+  check(DeviceActivityCenter.events[secondCycle]?[UsageMonitoring.usageEventName]?.includesPastActivity == false, "fresh allowance excludes past activity")
   monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: secondCycle)
   check(State.shield && SharedDefaults.suite.object(forKey: key) != nil, "second allowance triggers second lockout")
-  check(DeviceActivityCenter.events[secondCycle]?[UsageMonitoring.usageEventName]?.includesPastActivity == false, "fresh allowance excludes past activity")
   let secondEnd = SharedDefaults.suite.object(forKey: key) as! Date
   monitor.intervalDidEnd(for: lock)
   check(State.shield && SharedDefaults.suite.object(forKey: key) as? Date == secondEnd, "second lockout cannot end early")

@@ -22,9 +22,12 @@ enum EnforcementTransaction {
         while true {
             admission.lock()
             guard enabled else { admission.unlock(); return nil }
-            let lease = begin(wait: false)
+            let attempt = acquire(wait: false)
             admission.unlock()
-            if let lease { return lease }
+            if let lease = attempt.lease { return lease }
+            // Missing/unwritable shared storage cannot be repaired by spinning.
+            // Keep enforcement unchanged and let a later recovery retry it.
+            guard attempt.contended else { return nil }
             Thread.sleep(forTimeInterval: 0.01)
         }
     }
@@ -82,19 +85,27 @@ enum EnforcementTransaction {
 
     /// Failure leaves enforcement unchanged. Never fall back to an unlocked write.
     static func begin(wait: Bool = true) -> Lease? {
+        return acquire(wait: wait).lease
+    }
+
+    /// Effect admission callers retry only contention, never storage failure.
+    static func acquire(wait: Bool) -> (lease: Lease?, contended: Bool) {
         if wait { mutex.lock() }
-        else if !mutex.try() { return nil }
+        else if !mutex.try() { return (nil, true) }
         if depth == 0 {
-            guard let url = lockURL else { mutex.unlock(); return nil }
+            guard let url = lockURL else { mutex.unlock(); return (nil, false) }
             let fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
-            guard fd >= 0 else { mutex.unlock(); return nil }
+            guard fd >= 0 else { mutex.unlock(); return (nil, false) }
             var result: Int32
             repeat { result = flock(fd, wait ? LOCK_EX : LOCK_EX | LOCK_NB) } while result != 0 && errno == EINTR
-            guard result == 0 else { close(fd); mutex.unlock(); return nil }
+            guard result == 0 else {
+                let contended = errno == EWOULDBLOCK || errno == EAGAIN
+                close(fd); mutex.unlock(); return (nil, contended)
+            }
             descriptor = fd
             SharedDefaults.suite.synchronize()
         }
         depth += 1
-        return Lease()
+        return (Lease(), false)
     }
 }

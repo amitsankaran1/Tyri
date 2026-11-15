@@ -66,9 +66,10 @@ enum BlockingActuator {
         while true {
             lifecycleMutex.lock()
             guard effectsEnabled else { lifecycleMutex.unlock(); return nil }
-            let lease = EnforcementTransaction.begin(wait: false)
+            let attempt = EnforcementTransaction.acquire(wait: false)
             lifecycleMutex.unlock()
-            if let lease { return lease }
+            if let lease = attempt.lease { return lease }
+            guard attempt.contended else { return nil }
             Thread.sleep(forTimeInterval: 0.01)
         }
     }

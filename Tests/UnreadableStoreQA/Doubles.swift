@@ -38,8 +38,11 @@ class DeviceActivityMonitor {
  func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {}
 }
 struct DeviceActivityCenter {
+ static var events: [DeviceActivityName: [DeviceActivityEvent.Name: DeviceActivityEvent]] = [:]
  static var schedules: [DeviceActivityName: DeviceActivitySchedule] = [:]
+ static var stopAllCalls = 0
  var activities: [DeviceActivityName] { Array(Self.schedules.keys) }
- func startMonitoring(_ name: DeviceActivityName, during schedule: DeviceActivitySchedule, events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]) throws { Self.schedules[name] = schedule }
- func stopMonitoring(_ names: [DeviceActivityName]) { for n in names { Self.schedules[n] = nil } }
+ func startMonitoring(_ name: DeviceActivityName, during schedule: DeviceActivitySchedule, events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]) throws { Self.schedules[name] = schedule; Self.events[name] = events }
+ // Native contract: an empty argument stops every activity, not zero activities.
+ func stopMonitoring(_ names: [DeviceActivityName]) { if names.isEmpty { Self.stopAllCalls += 1; Self.schedules.removeAll(); Self.events.removeAll() }; for n in names { Self.schedules[n] = nil; Self.events[n] = nil } }
 }

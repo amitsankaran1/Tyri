@@ -43,6 +43,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
         guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval start: \(activity.rawValue)")
+        if kind == .usage { Self.recordUsageInterval("start", activity: activity, blockID: blockID) }
         switch kind {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
@@ -64,6 +65,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
         guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval end: \(activity.rawValue)")
+        if kind == .usage { Self.recordUsageInterval("end", activity: activity, blockID: blockID) }
         switch kind {
         case .schedule:
             ScheduleEnforcement.reconcile(blockID: blockID)
@@ -115,6 +117,18 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         if kind == .lock { UsageMonitoring.reconcileLockout(blockID: blockID) }
         if kind == .breakWindow { BreakMonitoring.finishIfExpired(blockID: blockID) }
+    }
+
+    // Interval delivery is evidence of a callback, not usage counting. Unlike
+    // threshold handling it does not accept/promote ownership, so label stale
+    // names explicitly and retain this evidence when a lock callback follows.
+    private static func recordUsageInterval(_ boundary: String, activity: DeviceActivityName, blockID: UUID) {
+        let ledger = MonitorRegistration.load("usage.\(blockID.uuidString)",
+            legacyName: UsageMonitoring.legacyUsageName(blockID), context: "")
+        let identity = ledger?.confirmed?.name == activity.rawValue ? "confirmed"
+            : ledger?.pending?.name == activity.rawValue ? "pending" : "stale"
+        EnforcementDiagnostics.record("usageInterval", blockID: blockID,
+            detail: "Interval \(boundary): \(activity.rawValue); identity: \(identity); counting not established")
     }
 
     // MARK: - Parsing

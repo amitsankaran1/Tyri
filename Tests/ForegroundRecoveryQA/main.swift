@@ -161,6 +161,9 @@ extension BlockingSchedule {
             let pending = MonitorRegistration.pending("usage.\(id.uuidString)")!
             lease.finish()
             let monitor = TyriMonitorExtension()
+            monitor.intervalDidStart(for: DeviceActivityName(rawValue: pending.name))
+            precondition((SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageInterval", id)) ?? "").contains("identity: pending"),
+                         "Interval callback presented an uncommitted owner as confirmed")
             monitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: DeviceActivityName(rawValue: pending.name))
             let deadline = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) as! Date
             precondition(State.shields.contains(id))
@@ -234,6 +237,12 @@ extension BlockingSchedule {
         recovery.setActive(true)
         try await wait { !recovery.isChecking }
         let retained = UsageMonitoring.usageActivityName(for: queued)
+        for event in ["usageRegistrationRequest", "usageRegistrationReturn", "publication"] {
+            let record = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key(event, queued)) ?? ""
+            precondition(record.contains(retained.rawValue), "Diagnostic omitted current allowance identity: \(event)")
+        }
+        let foreground = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("recovery", queued)) ?? ""
+        precondition(foreground.contains("Foreground admitted at"), "No foreground correlation timestamp")
         precondition(recovery.hasChecked && recovery.registeredUsageIDs.contains(queued))
         recovery.requestAccepted()
         precondition(recovery.registeredUsageIDs.contains(queued), "Unrelated Save discarded a healthy presentation")
@@ -406,5 +415,45 @@ extension BlockingSchedule {
         print("PASS: request during final observation queues a fresh usage-limit registration")
         print("PASS: break expiry re-shields BEFORE stalled IPC returns and retains its used allowance")
         print("PASS: migration retries after lease contention exactly once without blocking MainActor")
+        // Reproduce the ambiguity in build37's legacy diagnostics: a rearmed
+        // allowance disappears in the native boundary, then foreground recovery
+        // replaces it without changing the old "Registered allowance" receipt.
+        let evidenceID = UUID()
+        BlockResolution.blocks[evidenceID] = BlockRule(id: evidenceID, usageLimitMinutes: 10)
+        UsageMonitoring.startLockout(blockID: evidenceID, minutes: 180)
+        QAClock.now = SharedDefaults.suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: evidenceID)) as! Date
+        let evidenceMonitor = TyriMonitorExtension()
+        evidenceMonitor.intervalDidEnd(for: UsageMonitoring.lockActivityName(for: evidenceID))
+        let rearmed = UsageMonitoring.usageActivityName(for: evidenceID)
+        let oldReceipt = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("registration", evidenceID))
+        precondition(oldReceipt?.contains("Registered allowance") == true)
+        let rearmReturn = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageRegistrationReturn", evidenceID)) ?? ""
+        precondition(rearmReturn.contains(rearmed.rawValue) && rearmReturn.contains("Expiry rearm"))
+        DeviceActivityCenter().stopMonitoring([rearmed])
+        QAClock.now = QAClock.now.addingTimeInterval(14400)
+        recovery.setActive(true)
+        try await wait { !recovery.isChecking }
+        let replacement = UsageMonitoring.usageActivityName(for: evidenceID)
+        precondition(replacement != rearmed)
+        precondition(SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("registration", evidenceID)) == oldReceipt,
+                     "Fixture no longer reproduces build37's stale legacy registration receipt")
+        let reason = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageReplacement", evidenceID)) ?? ""
+        precondition(reason.contains("confirmed monitor absent") && reason.contains(rearmed.rawValue) && reason.contains(replacement.rawValue))
+        let observed = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageObservation", evidenceID)) ?? ""
+        precondition(observed.contains("Preserved observed allowance") && observed.contains(replacement.rawValue))
+        let usageReceipt = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageRegistrationReturn", evidenceID)) ?? ""
+        precondition(usageReceipt.contains("App recovery") && usageReceipt.contains(replacement.rawValue))
+        evidenceMonitor.intervalDidStart(for: rearmed)
+        precondition((SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageInterval", evidenceID)) ?? "").contains("identity: stale"))
+        evidenceMonitor.intervalDidStart(for: replacement)
+        let intervalReceipt = SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageInterval", evidenceID)) ?? ""
+        precondition(intervalReceipt.contains("identity: confirmed") && intervalReceipt.contains(replacement.rawValue))
+        evidenceMonitor.eventDidReachThreshold(UsageMonitoring.usageEventName, activity: replacement)
+        evidenceMonitor.intervalDidStart(for: UsageMonitoring.lockActivityName(for: evidenceID))
+        precondition(SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageRegistrationReturn", evidenceID)) == usageReceipt,
+                     "Lock registration overwrote allowance-native timing evidence")
+        precondition(SharedDefaults.suite.string(forKey: EnforcementDiagnostics.key("usageInterval", evidenceID)) == intervalReceipt,
+                     "Lock callback overwrote usage-interval evidence")
+        print("PASS: lost native allowance replacement is distinguished from preserved ownership; usage evidence survives lock callbacks")
     }
 }
