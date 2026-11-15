@@ -175,7 +175,9 @@ enum UsageMonitoring {
                 SharedDefaults.suite.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: block.id))
                 result.succeeded = true
                 commit.finish()
-                center.stopMonitoring(oldActivities)
+                // An empty list means stop ALL activities in DeviceActivity,
+                // including the allowance just registered after lock expiry.
+                if !oldActivities.isEmpty { center.stopMonitoring(oldActivities) }
             } catch {
                 let returnedAt = Date()
                 guard let commit = EnforcementTransaction.beginEffect() else { return }
@@ -222,7 +224,10 @@ enum UsageMonitoring {
             let retired = MonitorRegistration.retirementNames(observed: observed)
                 .filter { $0 == "usage.\(blockID.uuidString)" || $0.hasPrefix("usage.\(blockID.uuidString).") }
             lease.finish()
-            center.stopMonitoring(retired.map { DeviceActivityName(rawValue: $0) })
+            // Already-retired/absent usage must not stop unrelated monitors.
+            if !retired.isEmpty {
+                center.stopMonitoring(retired.map { DeviceActivityName(rawValue: $0) })
+            }
         }
     }
 

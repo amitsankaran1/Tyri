@@ -9,7 +9,9 @@ with tempfile.TemporaryDirectory(prefix='tyri-state-qa-') as d:
     base=(r/'Tests/CallbackQA/Doubles.swift').read_text().split('@main struct CallbackQA')[0]
     base=base.replace('static var starts = 0','static var starts = 0\n static var onStart: (() -> Void)?\n static var onStop: (() -> Void)?')
     base=base.replace('Self.events[name] = events','Self.events[name] = events\n  let callback = Self.onStart; Self.onStart = nil; callback?()')
-    base=base.replace('for n in names { Self.schedules[n] = nil }','for n in names { Self.schedules[n] = nil }; let callback = Self.onStop; Self.onStop = nil; callback?()')
+    stop = 'for n in names { Self.schedules[n] = nil; Self.events[n] = nil }'
+    assert stop in base, 'native stop hook must remain installed'
+    base=base.replace(stop, stop + '; let callback = Self.onStop; Self.onStop = nil; callback?()')
     (d/'Doubles.swift').write_text(base)
     files=[d/'Doubles.swift',r/'Tests/StateMachineQA/main.swift']
     for f in ['Shared/UsageMonitoring.swift','Shared/BreakMonitoring.swift','Shared/AdHocMonitoring.swift','Shared/UsageProgress.swift','Shared/EnforcementDiagnostics.swift']:

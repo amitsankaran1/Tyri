@@ -16,7 +16,8 @@ struct DeviceActivityCenter {
         if Self.failNext || (!Self.registered.contains(name) && Self.registered.count >= 20) { Self.failNext = false; throw NSError(domain: "QA", code: 1) }
         Self.starts += 1; Self.registered.insert(name)
     }
-    func stopMonitoring(_ names: [DeviceActivityName]) { for n in names { Self.registered.remove(n) } }
+    // Native empty-array semantics: stop all registered activities.
+    func stopMonitoring(_ names: [DeviceActivityName]) { if names.isEmpty { Self.registered.removeAll() }; for n in names { Self.registered.remove(n) } }
 }
 struct BlockingSchedule {
     enum CrossingSegment { case full, early, late }

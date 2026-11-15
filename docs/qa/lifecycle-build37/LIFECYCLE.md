@@ -1,6 +1,24 @@
 # Blocking lifecycle investigation and acceptance gaps
 
-Inspected baseline: `a9c222505b8c1f83b3bd6eb8c9db9b47dbba2698`, current main on November 14, 2026. **Build 2.4 (37) is now verified as this revision**; see the Apple build/run evidence in [provenance](PROVENANCE.md). This audit does not establish the cause of the reported recurrence or claim it fixed. Final execution results belong in the progress/check records, not inferred from test-file presence.
+Inspected baseline: `a9c222505b8c1f83b3bd6eb8c9db9b47dbba2698`, current main on November 14, 2026. **Build 2.4 (37) is now verified as this revision**; see the Apple build/run evidence in [provenance](PROVENANCE.md). The resumed audit found and reproduced an expiry-rearm defect in this source: an empty cleanup array stops every native monitor. The bounded fix is described below. Actual-device counting and shielding acceptance remain pending. Final execution results belong in the progress/check records, not inferred from test-file presence.
+
+## Reproduced monitor-loss cause and fix
+
+Apple's [`stopMonitoring(_:)` contract](https://developer.apple.com/documentation/deviceactivity/deviceactivitycenter/stopmonitoring(_:)) says an empty array stops **all** activities; a nonempty array stops only the named activities. The earlier native doubles incorrectly treated an empty array as a no-op. This masked a production failure, including in the previously passing lifecycle simulations.
+
+The normal sequence in build 37 is:
+
+1. A usage threshold starts the fixed 180-minute lock and invalidates the consumed allowance's ledger owner.
+2. At expiry, `startUsageMonitor` reads that inactive ledger: neither confirmed nor pending owner remains, so `oldActivities` is empty.
+3. Native registration succeeds, the next allowance is published, and the legacy registration receipt is written.
+4. The trailing `stopMonitoring(oldActivities)` then stops **every** native monitor, including that fresh allowance and unrelated schedule/break/lock monitors. Persisted configuration and the success receipt remain.
+5. Foreground recovery later observes the missing allowance and registers a replacement, starting a new counter. This supplies a concrete causal explanation for registration at 00:43 followed by counting only after reopening near 04:43. The old device logs cannot prove the precise generation sequence; physical acceptance is still required.
+
+The fix skips native cleanup when there are no names to retire. A second guard prevents empty filtered `stopUsageMonitor` cleanup from stopping unrelated monitors after retirement was already acknowledged (for example, timer-to-tag conversion followed by deletion). All 12 production native stop call sites were audited: the capacity path already guards its dynamic array, schedule removal uses three fixed names, and the remaining eight use singletons. Healthy native owners/counters, schedules, saved data and enforcement policy are unchanged.
+
+`Tests/UsageRearmQA/run.py` compiles actual production callbacks, usage/lock helpers and ledger/transaction code with a deterministic clock and a native double corrected to Apple's contract. It exercises two 10/180 cycles, successful receipt with a surviving next allowance, unrelated-owner survival, duplicate expiry/stale threshold preservation, and acknowledged empty teardown. `QA_REVISION=edd74e9 python3 Tests/UsageRearmQA/run.py` replays the unfixed production version against the same corrected boundary. This regression fails on the old source at the actual missing-native-monitor invariant; it does not inject an unexplained deletion. Other stateful native doubles also model empty stop and event removal correctly.
+
+The earlier injected-native-loss experiment below remains useful for diagnostic identity coverage, but is no longer the only evidence of how monitor loss can occur. Real Screen Time usage accumulation is not implemented by the doubles.
 
 ## Production path
 
@@ -13,7 +31,7 @@ Inspected baseline: `a9c222505b8c1f83b3bd6eb8c9db9b47dbba2698`, current main on 
 7. Shield writes run after releasing the state lease. `BlockingActuator` persists revisioned intent, rechecks ownership on completion, and retries pending intent. Settings readback establishes settings agreement only; it does not establish an effective shield on a target.
 8. Lock callbacks reconcile the persisted deadline, not callback order. Early/duplicate callbacks cannot shorten or extend the deadline. On expiry, `releaseExpiredLock` clears timed ownership, preserves manual ownership, and rearms a fresh allowance when no current usage monitor or pending owner exists. Foreground recovery separately handles missed expiry/rearm.
 
-## Evidence and competing explanations
+## Earlier evidence and competing explanations (before empty-stop discovery)
 
 The reported sequence is reopen → usage counts → block after another ten minutes. Exact reopen time, selected target, and preceding transition remain unknown. The 17:43:52 registration, 21:43:21 threshold, 21:43:22 lock start, and 21:47:45 settings readback do not establish counting onset or effective shielding.
 
@@ -78,4 +96,4 @@ After an approved release/TestFlight candidate is available:
 5. Use the app for another ten minutes without reopening Tyri. Verify a second actual shield and the new fixed lock deadline. Record the second generation/registration/callback times afterward.
 6. Correlate foreground, registration request/native-return/publication, expiry and threshold timestamps. If the failure recurs, preserve the diagnostics and exact target/preceding transition rather than resetting a healthy monitor.
 
-Build37 source verification is complete. Physical-device acceptance and a demonstrated explanation/fix for the recurrence remain prerequisites for closing the original bug. A bounded related defect fix or stronger diagnostics does not establish that the reported recurrence is resolved.
+Build37 source verification and a production-path monitor-loss reproduction/fix are complete. Physical-device acceptance remains a prerequisite for closing the original bug: a corrected native-contract double does not establish actual usage accumulation or effective shielding on Vyshu’s device.
