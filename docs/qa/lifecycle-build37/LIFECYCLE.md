@@ -1,6 +1,6 @@
 # Blocking lifecycle investigation and acceptance gaps
 
-Inspected baseline: `a9c222505b8c1f83b3bd6eb8c9db9b47dbba2698`, current main on November 14, 2026. **The source delivered as 2.4 (37) remains unverified**; see [provenance](PROVENANCE.md). This audit does not establish the cause of the reported recurrence or claim it fixed. Final execution results belong in the progress/check records, not inferred from test-file presence.
+Inspected baseline: `a9c222505b8c1f83b3bd6eb8c9db9b47dbba2698`, current main on November 14, 2026. **Build 2.4 (37) is now verified as this revision**; see the Apple build/run evidence in [provenance](PROVENANCE.md). This audit does not establish the cause of the reported recurrence or claim it fixed. Final execution results belong in the progress/check records, not inferred from test-file presence.
 
 ## Production path
 
@@ -17,18 +17,31 @@ Inspected baseline: `a9c222505b8c1f83b3bd6eb8c9db9b47dbba2698`, current main on 
 
 The reported sequence is reopen → usage counts → block after another ten minutes. Exact reopen time, selected target, and preceding transition remain unknown. The 17:43:52 registration, 21:43:21 threshold, 21:43:22 lock start, and 21:47:45 settings readback do not establish counting onset or effective shielding.
 
-On the inspected revision, the exact diagnostic `Registered allowance; progress events: true` comes only from `UsageMonitoring.startUsageMonitor`. Its sole production caller is the expiry-rearm path. Ordinary Save registration uses `ForegroundRecovery` and did not emit that diagnostic. **Conditional inference:** if build37 uses this code, the recorded registration points toward the next allowance after an earlier lock. Build attribution must be confirmed before treating this as the device's actual transition.
+On the inspected revision, the exact diagnostic `Registered allowance; progress events: true` comes only from `UsageMonitoring.startUsageMonitor`. Its sole production caller is the expiry-rearm path. Ordinary Save registration uses `ForegroundRecovery` and did not emit that diagnostic. With build37 now attributed to this revision, the recorded registration identifies the expiry-rearm path. It still does not identify the registered generation: the old diagnostic omitted that identity, and app recovery could later replace it without updating the same diagnostic slot.
 
 | Explanation | Evidence that would discriminate | Present conclusion |
 | --- | --- | --- |
 | Save/recovery did not complete before suspension | Save/admission, native request/return, reservation/publication and foreground times | Earlier fixes cover several interruptions in doubles; recurrence not reproduced |
-| Expiry rearmed but native counting/callback delivery stalled | Exact source, expiry and allowance generation, callback log before reopen, target usage timestamps | Plausible given diagnostic origin; not proven |
+| Expiry rearmed but native counting/callback delivery stalled | Expiry and allowance generation, callback log before reopen, target usage timestamps | Plausible given diagnostic origin; not proven |
 | Native all-day interval behaves differently on affected OS | Release-device reproduction using same generation without foreground, compared to documented behavior | No evidence justifies changing the schedule |
 | Generation or late completion replaced a working counter | Correlated reservation/publication identities and injected interleavings | Existing tests and added stress preserve healthy/current identities |
 | Shield was delayed despite timely threshold | Actual target shield observation vs threshold/foreground times | Cannot infer from settings readback; does not alone explain subsequent ten-minute counting |
 | Target selection or authorization differed | User checks the selected target and approved authorization; sanitized target counts | Selection identities intentionally not logged; device verification pending |
 
 Apple documents callbacks beginning when registration occurs during an ongoing interval, and schedule initialization documents an immediate interval-start callback when the current time lies inside it. This contradicts treating “midday registration must wait until midnight” as an established platform rule. Apple also documents that registering an existing activity overwrites its schedule/events, reinforcing the need to preserve healthy registrations. These documents describe the API contract, not proof that the affected device followed it. Sources: [startMonitoring](https://developer.apple.com/documentation/deviceactivity/deviceactivitycenter/startmonitoring(_:during:events:)), [schedule initializer](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/init(intervalstart:intervalend:repeats:warningtime:)).
+
+
+## November 15 follow-up evidence
+
+The additional device reports show the earlier lock deadline at `00:43:21Z`, an allowance registration at `00:43:24Z`, and a usage-interval start at `04:43:24Z` for generation `r-5FEC009E-10AE-48D1-B7EA-6A94B3B3E970`. The report captured at `04:43:32Z` showed a registered usage monitor, ten events, and no lock. Amit said the app had just been opened to check. The next capture at `04:55:28Z` showed a matching-generation threshold at `04:55:17Z`, lock start at `04:55:18Z`, and deadline `07:55:17Z`.
+
+This confirms an expiry-path registration receipt shortly after the previous deadline and later successful threshold-to-lock processing. It does **not** establish that the generation registered at `00:43:24Z` is the one receiving the interval callback four hours later, nor that the selected target was used throughout that gap. The legacy registration receipt lacked identity and was not updated by app recovery. The four-hour spacing is observed, but the production code contains no corresponding four-hour rearm delay; it is not evidence of a timezone conversion defect.
+
+The added deterministic regression deliberately removes a rearmed monitor at the native boundary, advances its clock four hours, then runs actual foreground recovery. It reproduces the diagnostic ambiguity: the old expiry registration receipt remains while recovery creates a different generation. This demonstrates a competing explanation permitted by production logic, **not** why iOS lost or delayed a monitor on the affected device. Existing healthy-monitor checks still prove that an observed matching owner is retained by app logic.
+
+Diagnostics now keep bounded usage-specific request/return slots so lock registration cannot erase allowance timings. A separate replacement receipt identifies the prior/current opaque names and distinguishes absent observed monitor from changed saved inputs; an observation receipt identifies a preserved/promoted owner. Usage interval callbacks retain a separate receipt labeled confirmed, pending, or stale identity. No selection tokens or semantic-context strings are logged. These are latest-per-kind receipts, not a complete event history, and interruption before commit can still omit a native outcome.
+
+Apple's [nextInterval documentation](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/nextinterval) describes interval boundary times as earliest callback times and says callbacks occur when the device is used. A four-hour wall-clock gap alone cannot establish a counting delay; the selected-target usage and actual foreground time remain required evidence. The existing registration/threshold timestamps should be correlated with these new identity-preserving receipts on an explicitly authorized candidate.
 
 ## Scenario matrix
 
@@ -65,4 +78,4 @@ After an approved release/TestFlight candidate is available:
 5. Use the app for another ten minutes without reopening Tyri. Verify a second actual shield and the new fixed lock deadline. Record the second generation/registration/callback times afterward.
 6. Correlate foreground, registration request/native-return/publication, expiry and threshold timestamps. If the failure recurs, preserve the diagnostics and exact target/preceding transition rather than resetting a healthy monitor.
 
-Build37 source verification and device acceptance remain external prerequisites for closing the original bug. A bounded related defect fix or stronger diagnostics does not establish that the reported recurrence is resolved.
+Build37 source verification is complete. Physical-device acceptance and a demonstrated explanation/fix for the recurrence remain prerequisites for closing the original bug. A bounded related defect fix or stronger diagnostics does not establish that the reported recurrence is resolved.

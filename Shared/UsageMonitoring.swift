@@ -135,7 +135,7 @@ enum UsageMonitoring {
         let previous = MonitorRegistration.load("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context)
         let oldNames = [previous?.confirmed?.name, previous?.pending?.name].compactMap { $0 }
         guard let ticket = MonitorRegistration.reserve("usage.\(block.id.uuidString)", legacyName: legacyUsageName(block.id), context: context) else { return false }
-        EnforcementDiagnostics.record("registrationRequest", blockID: block.id,
+        EnforcementDiagnostics.record("usageRegistrationRequest", blockID: block.id,
             detail: "Expiry rearm queued: \(ticket.name)")
         let result = MonitorResult()
         EnforcementTransaction.afterUnlock(key: ticket.name) {
@@ -166,7 +166,7 @@ enum UsageMonitoring {
                 let returnedAt = Date()
                 guard let commit = EnforcementTransaction.beginEffect() else { return }
                 let accepted = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: true)
-                EnforcementDiagnostics.record("registrationReturn", blockID: block.id,
+                EnforcementDiagnostics.record("usageRegistrationReturn", blockID: block.id,
                     detail: "Expiry rearm result committed: \(ticket.name); requested: \(ISO8601DateFormatter().string(from: requestedAt)); returned: \(ISO8601DateFormatter().string(from: returnedAt)); succeeded: true; publication: \(accepted)")
                 guard accepted == .promoted || accepted == .alreadyAccepted else { commit.finish(); center.stopMonitoring([activity]); return }
                 if !reportsProgress && accepted == .promoted { SharedDefaults.suite.removeObject(forKey: UsageProgress.key(block.id)) }
@@ -181,7 +181,7 @@ enum UsageMonitoring {
                 guard let commit = EnforcementTransaction.beginEffect() else { return }
                 defer { commit.finish() }
                 let completion = finishRegistration(ticket, context: currentUsageContext(blockID: block.id), succeeded: false)
-                EnforcementDiagnostics.record("registrationReturn", blockID: block.id,
+                EnforcementDiagnostics.record("usageRegistrationReturn", blockID: block.id,
                     detail: "Expiry rearm result committed: \(ticket.name); requested: \(ISO8601DateFormatter().string(from: requestedAt)); returned: \(ISO8601DateFormatter().string(from: returnedAt)); succeeded: false; publication: \(completion)")
                 guard completion == .failed else { return }
                 SharedDefaults.suite.set("Usage tracking couldn't start. Allow Screen Time access and retry.",

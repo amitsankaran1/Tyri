@@ -269,7 +269,7 @@ final class ForegroundRecovery: ObservableObject {
                             let valid = context(job.ticket.namespace) == job.ticket.owner.context
                                 && MonitorRegistration.pending(job.ticket.namespace)?.owner == job.ticket.owner
                             if valid, let id = Self.blockID(job.ticket.namespace) {
-                                EnforcementDiagnostics.record("registrationRequest", blockID: id,
+                                EnforcementDiagnostics.record(job.ticket.namespace.hasPrefix("usage.") ? "usageRegistrationRequest" : "registrationRequest", blockID: id,
                                     detail: "App recovery dispatch: \(job.ticket.name)")
                             }
                             return valid
@@ -282,7 +282,7 @@ final class ForegroundRecovery: ObservableObject {
                         try await withLease {
                             let result = completeRegistration(job.ticket, succeeded: outcome.succeeded)
                             if let id = Self.blockID(job.ticket.namespace) {
-                                EnforcementDiagnostics.record("registrationReturn", blockID: id,
+                                EnforcementDiagnostics.record(job.ticket.namespace.hasPrefix("usage.") ? "usageRegistrationReturn" : "registrationReturn", blockID: id,
                                     detail: "App recovery result committed: \(job.ticket.name); requested: \(ISO8601DateFormatter().string(from: outcome.requestedAt)); returned: \(ISO8601DateFormatter().string(from: outcome.returnedAt)); succeeded: \(outcome.succeeded); publication: \(result)")
                             }
                             if result == .promoted || result == .alreadyAccepted { observed.insert(job.ticket.name) }
@@ -485,6 +485,10 @@ final class ForegroundRecovery: ObservableObject {
             if let pending = ledger.pending, pending.context == semantic, observed.contains(pending.name) {
                 let ticket = MonitorReservation(namespace: namespace, owner: pending)
                 _ = completeRegistration(ticket, succeeded: true)
+                if namespace.hasPrefix("usage."), let id = Self.blockID(namespace) {
+                    EnforcementDiagnostics.record("usageObservation", blockID: id,
+                        detail: "Observed pending allowance promoted: \(pending.name)")
+                }
                 return
             }
             if !commands.isEmpty, ledger.pending != nil,
@@ -498,6 +502,8 @@ final class ForegroundRecovery: ObservableObject {
                 _ = completeRegistration(MonitorReservation(namespace: namespace, owner: confirmed), succeeded: true)
                 if let id = Self.blockID(namespace) {
                     if namespace.hasPrefix("usage.") {
+                        EnforcementDiagnostics.record("usageObservation", blockID: id,
+                            detail: "Preserved observed allowance: \(confirmed.name)")
                         defaults.removeObject(forKey: SharedDefaults.Keys.usageError(blockID: id))
                     }
                     if namespace.hasPrefix("lock.") || namespace.hasPrefix("adhoc.") {
@@ -509,6 +515,14 @@ final class ForegroundRecovery: ObservableObject {
             guard attempted.insert(namespace + "|" + semantic).inserted,
                 let ticket = MonitorRegistration.reserve(namespace, legacyName: legacy, context: semantic)
             else { return }
+            if namespace.hasPrefix("usage."), let id = Self.blockID(namespace) {
+                let reason: String
+                if let confirmed = ledger.confirmed {
+                    reason = confirmed.context == semantic ? "confirmed monitor absent from native observation" : "saved monitoring inputs changed"
+                } else { reason = "no confirmed allowance" }
+                EnforcementDiagnostics.record("usageReplacement", blockID: id,
+                    detail: "Reserved allowance: \(ticket.name); reason: \(reason); previous confirmed: \(ledger.confirmed?.name ?? "none"); previous pending: \(ledger.pending?.name ?? "none")")
+            }
             jobs.append(RecoveryJob(ticket: ticket, schedule: schedule, events: events, fallback: fallback))
         }
         guard let blocks = BlockResolution.loadBlocks(), let groups = BlockResolution.loadGroups() else { return jobs }
