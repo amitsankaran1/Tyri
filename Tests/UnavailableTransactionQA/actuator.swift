@@ -1,3 +1,5 @@
+import Foundation
+
 @main struct UnavailableActuatorQA {
     static func main() {
         defer { SharedDefaults.suite.removePersistentDomain(forName: SharedDefaults.name) }
