@@ -1,6 +1,12 @@
 import Foundation
 enum BlockType { case timer,schedule,tag }
-struct BlockRule { var id=UUID();var name="Timer";var type:BlockType = .timer;var appGroupIDs:[UUID]=[UUID()];var cooldownMinutes=5;var breakMinutes=0;var isEnabled=false;var schedule:Int?=nil;var usageLimitMinutes:Int?=5;var usageLockMinutes=5 }
+struct QASchedule {
+ func nextWindowEnd(at now: Date) -> Date? { now.addingTimeInterval(60) }
+}
+extension BlockRule {
+ mutating func startManualSchedule(until end: Date) { isEnabled = true }
+}
+struct BlockRule { var id=UUID();var name="Timer";var type:BlockType = .timer;var appGroupIDs:[UUID]=[UUID()];var cooldownMinutes=5;var breakMinutes=0;var isEnabled=false;var schedule:QASchedule?=nil;var usageLimitMinutes:Int?=5;var usageLockMinutes=5 }
 class Store {
  var value=BlockRule()
  func block(id:UUID)->BlockRule?{value}
@@ -57,7 +63,7 @@ class Probe {
  let blockStore=Store(),screenTimeManager=Screen(),usageLimitManager=Usage(),schedulingManager=Scheduling()
  var screenTime:Screen{screenTimeManager};var usage:Usage{usageLimitManager};var scheduling:Scheduling{schedulingManager};let adHoc=AdHoc();let breaks=Breaks()
  var blockID:UUID{blockStore.value.id}
- var hasLoaded=true;var newBlock:BlockRule?=nil;var type:BlockType = .timer;var schedule:Int?=nil;var usageLimitMinutes=5,usageLockMinutes=5,cooldownMinutes=5,breakMinutes=0;var groupIDs:Set<UUID>=[UUID()];var isEnabled=true;var name="Timer";var finished=false
+ var hasLoaded=true;var newBlock:BlockRule?=nil;var type:BlockType = .timer;var schedule:QASchedule?=nil;var usageLimitMinutes=5,usageLockMinutes=5,cooldownMinutes=5,breakMinutes=0;var groupIDs:Set<UUID>=[UUID()];var isEnabled=true;var name="Timer";var finished=false;var startScheduledBlock=false
  func finish(){finished=true}
 }
 @main struct Tests {

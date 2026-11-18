@@ -28,10 +28,28 @@ struct BlockRule: Identifiable, Codable, Equatable {
     /// Referenced AppGroup ids; effective tokens = union of their selections.
     var appGroupIDs: [UUID]
     /// Manual force-on (and the on/off state for `.tag` blocks).
-    var isEnabled: Bool
+    private var manualEnabled: Bool
+    /// Shared with the Device Activity extension in the persisted block.
+    private(set) var manualScheduleEnd: Date?
+    var isEnabled: Bool {
+        get { isEnabled(at: Date()) }
+        set {
+            manualEnabled = newValue
+            manualScheduleEnd = nil
+        }
+    }
+
+    func isEnabled(at now: Date) -> Bool {
+        manualScheduleEnd.map { now < $0 } ?? manualEnabled
+    }
+
+    mutating func startManualSchedule(until end: Date) {
+        manualEnabled = false
+        manualScheduleEnd = end
+    }
     /// Early-release friction in minutes (all block types). `0` is the strictest
-    /// setting — "no cooldown" — meaning there is NO in-app early-disable path
-    /// while the block is active (it lifts only when its schedule window or
+    /// setting — "no cooldown" — meaning there is no in-app early-disable path
+    /// for automatic schedule or usage enforcement while the block is active (it lifts only when its schedule window or
     /// usage lockout ends, via the NFC tag for tag blocks, or via the emergency
     /// override).
     var cooldownMinutes: Int
@@ -64,7 +82,7 @@ struct BlockRule: Identifiable, Codable, Equatable {
         self.name = name
         self.type = type
         self.appGroupIDs = appGroupIDs
-        self.isEnabled = isEnabled
+        self.manualEnabled = isEnabled
         self.cooldownMinutes = cooldownMinutes
         self.breakMinutes = breakMinutes
         self.schedule = schedule
@@ -77,7 +95,8 @@ struct BlockRule: Identifiable, Codable, Equatable {
         let a = lhs.id == rhs.id
             && lhs.name == rhs.name
             && lhs.type == rhs.type
-            && lhs.isEnabled == rhs.isEnabled
+            && lhs.manualEnabled == rhs.manualEnabled
+            && lhs.manualScheduleEnd == rhs.manualScheduleEnd
             && lhs.cooldownMinutes == rhs.cooldownMinutes
             && lhs.breakMinutes == rhs.breakMinutes
         let b = lhs.schedule == rhs.schedule
@@ -90,7 +109,7 @@ struct BlockRule: Identifiable, Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, type, appGroupIDs, isEnabled, schedule, cooldownMinutes
-        case breakMinutes, usageLimitMinutes, usageLockMinutes, createdAt
+        case breakMinutes, usageLimitMinutes, usageLockMinutes, createdAt, manualScheduleEnd
     }
 
     init(from decoder: Decoder) throws {
@@ -99,7 +118,8 @@ struct BlockRule: Identifiable, Codable, Equatable {
         name = try c.decode(String.self, forKey: .name)
         type = try c.decodeIfPresent(BlockType.self, forKey: .type) ?? .schedule
         appGroupIDs = try c.decodeIfPresent([UUID].self, forKey: .appGroupIDs) ?? []
-        isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        manualEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        manualScheduleEnd = try c.decodeIfPresent(Date.self, forKey: .manualScheduleEnd)
         schedule = try c.decodeIfPresent(BlockingSchedule.self, forKey: .schedule)
         cooldownMinutes = try c.decodeIfPresent(Int.self, forKey: .cooldownMinutes) ?? 5
         breakMinutes = try c.decodeIfPresent(Int.self, forKey: .breakMinutes) ?? 0
@@ -114,7 +134,8 @@ struct BlockRule: Identifiable, Codable, Equatable {
         try c.encode(name, forKey: .name)
         try c.encode(type, forKey: .type)
         try c.encode(appGroupIDs, forKey: .appGroupIDs)
-        try c.encode(isEnabled, forKey: .isEnabled)
+        try c.encode(manualEnabled, forKey: .isEnabled)
+        try c.encodeIfPresent(manualScheduleEnd, forKey: .manualScheduleEnd)
         try c.encodeIfPresent(schedule, forKey: .schedule)
         try c.encode(cooldownMinutes, forKey: .cooldownMinutes)
         try c.encode(breakMinutes, forKey: .breakMinutes)

@@ -85,7 +85,17 @@ enum TestHarness {
             // Review screenshots use a separate presentation fixture, not fabricated
             // Screen Time authorization or enforcement. Keep the usage editor editable.
             if var block = BlockStore.shared.block(id: work.id) {
-                block.schedule = BlockingSchedule()
+                if BlockStatusPresentation.reviewScenario == "scheduled-manual" {
+                    let now = Date()
+                    let calendar = Calendar.current
+                    let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)!
+                    let schedule = BlockingSchedule(startHour: 8, endHour: 18,
+                                                    weekdays: [calendar.component(.weekday, from: tomorrow)])
+                    block.schedule = schedule
+                    block.startManualSchedule(until: schedule.nextWindowEnd(at: now, calendar: calendar)!)
+                } else {
+                    block.schedule = BlockingSchedule()
+                }
                 BlockStore.shared.update(block)
                 BlockStore.shared.flush()
             }

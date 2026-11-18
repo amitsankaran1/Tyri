@@ -90,6 +90,7 @@ extension BlockingSchedule {
     var loadError: String? = nil
     func flush() {}
     func reload() {}
+    func boundLegacyManualSchedules(at now: Date) {}
 }
 @MainActor final class AppGroupStore {
     static let shared = AppGroupStore()

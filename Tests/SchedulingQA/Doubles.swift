@@ -28,6 +28,8 @@ struct BlockRule {
     let id = UUID()
     var name: String
     let type = BlockType.schedule
+    var manualScheduleEnd: Date?
+    var isEnabled = false
     var schedule: BlockingSchedule? = .init()
 }
 enum SharedDefaults {

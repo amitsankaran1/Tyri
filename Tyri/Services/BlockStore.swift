@@ -89,6 +89,22 @@ class BlockStore: ObservableObject {
         update(b)
     }
 
+    /// Old saves recorded the flag without a start date. Bound those activations
+    /// to the next window end on the first recovery that can read their schedule.
+    func boundLegacyManualSchedules(at now: Date) {
+        guard loadError == nil else { return }
+        var updated = blocks
+        for index in updated.indices {
+            let block = updated[index]
+            guard block.type == .schedule, block.isEnabled(at: now), block.manualScheduleEnd == nil,
+                  let end = block.schedule?.nextWindowEnd(at: now) else { continue }
+            updated[index].startManualSchedule(until: end)
+        }
+        guard updated != blocks else { return }
+        blocks = updated
+        flush()
+    }
+
     /// Replace the whole set (used by migration). Persists synchronously.
     func replaceAll(_ newBlocks: [BlockRule]) {
         guard loadError == nil else { return }

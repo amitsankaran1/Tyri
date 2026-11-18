@@ -2,8 +2,6 @@ import Foundation
 protocol ObservableObject {}
 @propertyWrapper struct Published<T> { var wrappedValue: T }
 struct FamilyActivitySelection: Codable {}
-enum BlockType: Codable { case schedule }
-struct BlockRule: Codable { var id = UUID(); var name: String; var type: BlockType = .schedule; var isEnabled = false; var appGroupIDs: [UUID] = [] }
 struct AppGroup: Codable { var id = UUID(); var name: String; var updatedAt = Date(); var selection = FamilyActivitySelection() }
 enum SharedDefaults {
  static let suite = UserDefaults(suiteName: "tyri-store-durability-\(UUID())")!
@@ -41,6 +39,18 @@ enum EnforcementDiagnostics { static let events: [String] = []; static func key(
   precondition(blocks.loadError == nil && groups.loadError == nil)
   blocks.flush(); groups.flush()
   precondition(blocks.blocks.first?.id == block.id && groups.groups.first?.id == group.id)
+  let calendar = Calendar.current
+  let now = calendar.date(bySettingHour: 13, minute: 0, second: 0, of: Date())!
+  let end = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: now)!
+  let legacy = BlockRule(name: "Work", isEnabled: true, schedule: BlockingSchedule(startHour: 8, endHour: 18,
+                        weekdays: [calendar.component(.weekday, from: now)]))
+  blocks.insert(legacy)
+  blocks.boundLegacyManualSchedules(at: now)
+  blocks.reload()
+  precondition(blocks.block(id: legacy.id)?.manualScheduleEnd == end, "Legacy manual run must persist a deadline")
+  blocks.boundLegacyManualSchedules(at: end.addingTimeInterval(1))
+  precondition(blocks.block(id: legacy.id)?.manualScheduleEnd == end, "Further recovery must not extend the deadline")
+  print("PASS: a legacy scheduled Block now adopts one durable deadline")
   print("PASS: unreadable current stores survive launch/flush/edit; successful reload preserves identities and restores writes")
  }
 }

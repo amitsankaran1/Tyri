@@ -59,12 +59,15 @@ struct BlockStatusPresentation {
         guard canDisplayActivity else {
             return Self(state: .setup, detail: "Allow access in Settings to start this block.")
         }
+        let manual = block.isEnabled
+        let manualEnd = manual ? block.manualScheduleEnd : nil
+        let manualDetail = manualEnd.map { BlockingEndDescription.scheduledManualDetail(end: $0) }
         if ScreenTimeManager.shared.isBlockActive(block),
            let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.shieldError(blockID: block.id)) {
             return Self(state: .unavailable, detail: error.isEmpty ? "iOS did not confirm this block. Follow the recovery steps below." : error)
         }
         if let error = SchedulingManager.shared.registrationErrors[block.id] {
-            return Self(state: .unavailable, detail: error.isEmpty ? "Automatic schedule registration failed." : error)
+            return Self(state: .unavailable, detail: [manualDetail, error.isEmpty ? "Automatic schedule registration failed." : error].compactMap { $0 }.joined(separator: " "))
         }
         if let error = SharedDefaults.suite.string(forKey: SharedDefaults.Keys.usageLockError(blockID: block.id)) {
             return Self(state: .unavailable, detail: error.isEmpty ? "The automatic end could not be registered." : error)
@@ -74,12 +77,12 @@ struct BlockStatusPresentation {
             return Self(state: .unavailable, detail: error.isEmpty ? "Usage tracking could not start. Follow the recovery steps below." : error)
         }
         if BreakMonitoring.isOnBreak(blockID: block.id) {
-            return Self(state: .paused, detail: "Blocking resumes automatically.", end: BreakMonitoring.breakEnd(blockID: block.id))
+            return Self(state: .paused, detail: manualDetail ?? "Blocking resumes automatically.", end: BreakMonitoring.breakEnd(blockID: block.id))
         }
         if ScreenTimeManager.shared.isBlockActive(block) {
             let timedEnd = UsageLimitManager.shared.lockEnd(for: block.id) ?? block.schedule?.activeWindow()?.end
-            let end = block.isEnabled ? nil : timedEnd
-            var detail = BlockingEndDescription.detail(timedEnd: timedEnd, manual: block.isEnabled, tag: block.type == .tag)
+            let end = manualEnd ?? (manual ? nil : timedEnd)
+            var detail = manualDetail ?? BlockingEndDescription.detail(timedEnd: timedEnd, manual: manual, tag: block.type == .tag)
             if let wait = CooldownManager.shared.activeCooldown, wait.blockID == block.id {
                 detail += " " + (wait.endsAt > Date()
                     ? "Apps stay blocked. You can stop early at \(wait.endsAt.formatted(date: .omitted, time: .shortened))."
@@ -110,6 +113,13 @@ struct BlockStatusPresentation {
 
     private static func reviewStatus(for block: BlockRule) -> Self? {
         guard let scenario = reviewScenario else { return nil }
+        if scenario == "scheduled-manual", block.type == .schedule {
+            // The empty-token fixture demonstrates copy without asserting an iOS shield.
+            if block.isEnabled, let end = block.manualScheduleEnd {
+                return Self(state: .blocking, detail: BlockingEndDescription.scheduledManualDetail(end: end), end: end)
+            }
+            return Self(state: .off, detail: block.schedule?.summary ?? "No schedule set")
+        }
         if scenario == "attention" {
             return block.type == .timer
                 ? Self(state: .unavailable, detail: "Usage tracking is not registered.")
