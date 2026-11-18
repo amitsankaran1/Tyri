@@ -16,6 +16,7 @@ class SchedulingManager: ObservableObject {
     static let shared = SchedulingManager()
 
     @Published private(set) var activeScheduledBlockIDs: Set<UUID> = []
+    @Published private var activeManualScheduleIDs: Set<UUID> = []
     @Published private(set) var registrationErrors: [UUID: String] = [:]
 
     private var refreshTimer: Timer?
@@ -102,6 +103,10 @@ class SchedulingManager: ObservableObject {
                 ids.insert(block.id)
             }
         }
+        let manualIDs = Set(BlockStore.shared.blocks.filter {
+            $0.manualScheduleEnd != nil && $0.isEnabled
+        }.map(\.id))
+        if manualIDs != activeManualScheduleIDs { activeManualScheduleIDs = manualIDs }
         if ids != activeScheduledBlockIDs {
             activeScheduledBlockIDs = ids
         }

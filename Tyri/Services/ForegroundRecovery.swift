@@ -378,6 +378,10 @@ final class ForegroundRecovery: ObservableObject {
             guard block.type == .schedule, let schedule = block.schedule else { return nil }
             return ScheduleEnforcement.registrationContext(schedule)
         }
+        if namespace.hasPrefix("manual."), block.type == .schedule,
+           let end = block.manualScheduleEnd, end > Date() {
+            return ScheduleEnforcement.manualRegistrationContext(end: end)
+        }
         if namespace.hasPrefix("usage.") {
             guard defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: id)) == nil else { return nil }
             guard let groups = BlockResolution.loadGroups() else { return nil }
@@ -401,6 +405,7 @@ final class ForegroundRecovery: ObservableObject {
         let changed = reconcileDeadlines()
         let defaults = SharedDefaults.suite
         let now = Date()
+        BlockStore.shared.boundLegacyManualSchedules(at: now)
         // Persisted intent (including emergency/expiry clears) remains retryable
         // even when unrelated configuration cannot be decoded.
         defer { BlockingActuator.replayPending() }
@@ -532,6 +537,12 @@ final class ForegroundRecovery: ObservableObject {
                     "block.\(block.id.uuidString)", legacy: "block.\(block.id.uuidString)",
                     schedule: schedule.deviceActivitySchedule())
             }
+            if block.type == .schedule, let end = block.manualScheduleEnd, end > Date() {
+                // Use the same Device Activity deadline as breaks and lockouts.
+                // This also covers a skipped weekly callback or a one-shot schedule.
+                let namespace = "manual.\(block.id.uuidString)"
+                plan(namespace, legacy: namespace, schedule: deadlineSchedule(end, limitToOneWeek: true))
+            }
             if block.type == .timer {
                 if let end = defaults.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date {
                     plan(
@@ -565,8 +576,11 @@ final class ForegroundRecovery: ObservableObject {
         return jobs
     }
 
-    private func deadlineSchedule(_ end: Date) -> DeviceActivitySchedule {
-        let start = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+    private func deadlineSchedule(_ end: Date, limitToOneWeek: Bool = false) -> DeviceActivitySchedule {
+        let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+        // Device Activity limits an interval to one week. A weekly deadline can
+        // be further away in absolute time when the clock falls back.
+        let start = limitToOneWeek ? max(now, end.addingTimeInterval(-7 * 24 * 60 * 60)) : now
         let monitorEnd = max(end, start.addingTimeInterval(900))
         let warning = Int(ceil(monitorEnd.timeIntervalSince(end)))
         var calendar = Calendar(identifier: .gregorian)
@@ -580,6 +594,9 @@ final class ForegroundRecovery: ObservableObject {
 
     private func publishFailure(_ ticket: MonitorReservation, detail: String?, errors: inout [UUID: String]) {
         guard let id = Self.blockID(ticket.namespace) else { return }
+        if ticket.namespace.hasPrefix("manual."), BlockResolution.loadBlock(id: id)?.schedule?.repeats == false {
+            errors[id] = "Automatic end could not be restored. Open Tyri at the end of this session."
+        }
         if ticket.namespace.hasPrefix("block.") { errors[id] = "Couldn’t start this schedule. \(detail ?? "")" }
         if ticket.namespace.hasPrefix("usage.") {
             SharedDefaults.suite.set(
@@ -608,7 +625,7 @@ final class ForegroundRecovery: ObservableObject {
             }
             for name in observed {
                 let parts = name.split(separator: ".")
-                guard parts.count >= 2, ["block", "usage", "lock", "break", "adhoc"].contains(String(parts[0])),
+                guard parts.count >= 2, ["block", "usage", "lock", "break", "adhoc", "manual"].contains(String(parts[0])),
                     let id = UUID(uuidString: String(parts[1])), BlockResolution.loadBlock(id: id) == nil,
                     AdHocMonitoring.session?.id != id
                 else { continue }

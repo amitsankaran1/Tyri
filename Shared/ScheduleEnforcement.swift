@@ -6,6 +6,10 @@ enum ScheduleEnforcement {
     static func registrationContext(_ schedule: BlockingSchedule) -> String {
         "\(schedule.startHour):\(schedule.startMinute)-\(schedule.endHour):\(schedule.endMinute)|\(schedule.weekdays.sorted())|\(schedule.repeats)"
     }
+    static func manualRegistrationContext(end: Date) -> String {
+        String(end.timeIntervalSinceReferenceDate)
+    }
+
     static func releaseCurrentWindow(block: BlockRule, now: Date = Date()) {
         guard let transition = EnforcementTransaction.begin() else { return }
         defer { transition.finish() }
@@ -56,13 +60,17 @@ enum ScheduleEnforcement {
             defaults.removeObject(forKey: runningKey)
             defaults.removeObject(forKey: windowKey)
             // Ending a schedule must not lift an independent manual activation.
-            if block.isEnabled {
+            if block.isEnabled(at: now) {
                 if !BreakMonitoring.isOnBreak(blockID: block.id) {
                     if let tokens = BlockResolution.tokens(forBlockID: block.id) {
                         BlockingActuator.apply(tokens: tokens, blockID: block.id)
                     }
                 }
             } else {
+                if block.manualScheduleEnd != nil &&
+                    (BreakMonitoring.breakEnd(blockID: block.id) != nil || BreakMonitoring.pendingEnd(blockID: block.id) != nil) {
+                    BreakMonitoring.resetAllowance(blockID: block.id, stopMonitoring: stopMonitoring)
+                }
                 BlockingActuator.clearShields(blockID: block.id)
             }
         }

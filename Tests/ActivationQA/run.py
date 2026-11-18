@@ -10,7 +10,7 @@ def method(s,name):
  return s[start:i].replace('private func','func')
 with tempfile.TemporaryDirectory(prefix='tyri-activation-qa-') as d:
  d=Path(d);p=d/'ProductionMethods.swift'
- p.write_text('extension Probe {\n'+method(source('Tyri/Views/BlockEditorView.swift'),'save')+'\n'+method(source('Tyri/Views/HomeView.swift'),'refresh')+'\n}')
+ p.write_text('import Foundation\n\nextension Probe {\n'+method(source('Tyri/Views/BlockEditorView.swift'),'save')+'\n'+method(source('Tyri/Views/HomeView.swift'),'refresh')+'\n}')
  subprocess.run(['swiftc','-parse-as-library','-module-cache-path',str(d/'cache'),str(Path(__file__).with_name('Doubles.swift')),str(p),*([str(repo/'Shared/EnforcementTransaction.swift')] if not os.environ.get('QA_REVISION') else []),'-o',str(d/'run')],check=True)
  result=subprocess.run([str(d/'run')],capture_output=True,text=True,check=True,timeout=25)
  print(result.stdout,end="")

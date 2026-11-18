@@ -100,6 +100,34 @@ suite.set(Data("not-json".utf8), forKey: SharedDefaults.Keys.groups)
 QAClock.now = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
 ScheduleEnforcement.reconcile(block: bounded, now: QAClock.now)
 expect(apps(bounded.id) == nil, "known schedule expiry releases even if target lists are unreadable")
+// Scheduled Block now survives reading the block back from shared storage.
+suite.set(goodGroups, forKey: SharedDefaults.Keys.groups)
+var scheduledManual = bounded
+QAClock.now = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: today)!
+let scheduledEnd = calendar.date(bySettingHour: 11, minute: 0, second: 0, of: today)!
+scheduledManual.startManualSchedule(until: scheduledEnd)
+suite.set(try! JSONEncoder().encode([scheduledManual, schedule]), forKey: SharedDefaults.Keys.blocks)
+let scheduledActivity = DeviceActivityName(rawValue: "block.\(scheduledManual.id.uuidString)")
+ext.intervalDidEnd(for: scheduledActivity)
+expect(apps(scheduledManual.id) == [11, 12], "an early callback preserves scheduled Block now before the window starts")
+QAClock.now = scheduledEnd
+ext.intervalDidEnd(for: scheduledActivity)
+expect(apps(scheduledManual.id) == nil, "schedule end callback releases persisted Block now at its deadline")
+expect(apps(schedule.id) == [11, 12], "scheduled Block now expiry preserves independent shields")
+QAClock.now = scheduledEnd.addingTimeInterval(-60)
+ext.intervalDidStart(for: scheduledActivity)
+let manualNamespace = "manual.\(scheduledManual.id.uuidString)"
+let deadlineMonitor = MonitorRegistration.reserve(manualNamespace, legacyName: manualNamespace,
+                                                  context: String(scheduledEnd.timeIntervalSinceReferenceDate))!
+let deadlineActivity = DeviceActivityName(rawValue: deadlineMonitor.name)
+ext.intervalWillEndWarning(for: deadlineActivity)
+expect(apps(scheduledManual.id) == [11, 12], "premature deadline warning preserves scheduled Block now")
+QAClock.now = scheduledEnd
+ext.intervalWillEndWarning(for: deadlineActivity)
+expect(apps(scheduledManual.id) == nil, "one-shot deadline callback releases even if the regular interval end is missing")
+scheduledManual.isEnabled = false
+let stopped = try! JSONDecoder().decode(BlockRule.self, from: JSONEncoder().encode(scheduledManual))
+expect(!stopped.isEnabled && stopped.manualScheduleEnd == nil, "manual stop clears the persisted deadline")
 print("RESULT R1: \(passed) controls passed, \(failed) controls failed")
 suite.removePersistentDomain(forName: SharedDefaults.qaName)
 exit(failed == 0 ? 0 : 1)

@@ -48,16 +48,41 @@ struct BlockingSchedule: Codable, Equatable, Hashable {
     /// End is exclusive. Calendar arithmetic preserves local wall times across DST.
     func activeWindow(at now: Date = Date(), calendar: Calendar = .current) -> DateInterval? {
         let today = calendar.startOfDay(for: now)
-        for offset in [0, -1] {
-            guard let day = calendar.date(byAdding: .day, value: offset, to: today),
-                  weekdays.contains(calendar.component(.weekday, from: day)),
-                  let start = calendar.date(bySettingHour: startHour, minute: startMinute, second: 0, of: day),
-                  let endDay = calendar.date(byAdding: .day, value: crossesMidnight ? 1 : 0, to: day),
-                  let end = calendar.date(bySettingHour: endHour, minute: endMinute, second: 0, of: endDay),
-                  start <= now, now < end else { continue }
-            return DateInterval(start: start, end: end)
+        return [0, -1].lazy.compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: today)
+                .flatMap { window(startingOn: $0, calendar: calendar) }
+        }.first { $0.start <= now && now < $0.end }
+    }
+
+    /// End of the active window or the next selected window in local time.
+    func nextWindowEnd(at now: Date, calendar: Calendar = .current) -> Date? {
+        if let active = activeWindow(at: now, calendar: calendar) { return active.end }
+
+        let today = calendar.startOfDay(for: now)
+        // Include a second week in case a DST gap leaves a selected day without a window.
+        for offset in 0...14 {
+            if let day = calendar.date(byAdding: .day, value: offset, to: today),
+               let window = window(startingOn: day, calendar: calendar), window.start > now {
+                return window.end
+            }
         }
         return nil
+    }
+
+    private func window(startingOn day: Date, calendar: Calendar) -> DateInterval? {
+        guard weekdays.contains(calendar.component(.weekday, from: day)),
+              let start = boundary(on: day, hour: startHour, minute: startMinute, calendar: calendar),
+              let endDay = calendar.date(byAdding: .day, value: crossesMidnight ? 1 : 0, to: day),
+              let end = boundary(on: endDay, hour: endHour, minute: endMinute, calendar: calendar),
+              calendar.isDate(start, inSameDayAs: day), calendar.isDate(end, inSameDayAs: endDay),
+              start < end else { return nil }
+        return DateInterval(start: start, end: end)
+    }
+
+    private func boundary(on day: Date, hour: Int, minute: Int, calendar: Calendar) -> Date? {
+        calendar.nextDate(after: calendar.startOfDay(for: day).addingTimeInterval(-1),
+                          matching: DateComponents(hour: hour, minute: minute, second: 0),
+                          matchingPolicy: .nextTimePreservingSmallerComponents)
     }
 
     /// Short human label like "Mon–Fri 9:00–17:00".

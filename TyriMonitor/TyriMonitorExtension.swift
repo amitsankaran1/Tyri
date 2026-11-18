@@ -7,6 +7,7 @@
 //
 //  Activity names (see SchedulingManager / UsageMonitoring / BreakMonitoring):
 //    - "block.<UUID>" / ".early" / ".late"  → time-of-day scheduled block
+//    - "manual.<UUID>"                       → one-shot scheduled Block now deadline
 //    - "usage.<UUID>"                        → all-day usage counting window
 //    - "lock.<UUID>"                         → one-shot usage lockout window
 //    - "break.<UUID>"                        → one-shot break window (shield lifted)
@@ -62,6 +63,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
 
         super.intervalDidEnd(for: activity)
         log.notice("Interval end \(activity.rawValue, privacy: .public)")
+        if activity.rawValue.hasPrefix("manual.") { Self.reconcileManualEnd(activity); return }
         if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
         guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         EnforcementDiagnostics.record("callback", blockID: blockID, detail: "Interval end: \(activity.rawValue)")
@@ -113,6 +115,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         defer { transition.finish() }
 
         super.intervalWillEndWarning(for: activity)
+        if activity.rawValue.hasPrefix("manual.") { Self.reconcileManualEnd(activity); return }
         if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
         guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
         if kind == .lock { UsageMonitoring.reconcileLockout(blockID: blockID) }
@@ -196,6 +199,19 @@ class TyriMonitorExtension: DeviceActivityMonitor {
                                                    blockID: id, end: end, succeeded: true)
         }
         return result == .promoted || result == .alreadyAccepted
+    }
+
+    private static func reconcileManualEnd(_ activity: DeviceActivityName) {
+        let parts = activity.rawValue.split(separator: ".")
+        guard parts.count >= 2, let id = UUID(uuidString: String(parts[1])),
+              let block = BlockResolution.loadBlock(id: id), block.type == .schedule,
+              let end = block.manualScheduleEnd, end <= Date() else { return }
+        let namespace = "manual.\(id.uuidString)"
+        let result = MonitorRegistration.accept(activity.rawValue, namespace: namespace, legacyName: nil,
+                                                context: ScheduleEnforcement.manualRegistrationContext(end: end))
+        if result == .promoted || result == .alreadyAccepted {
+            ScheduleEnforcement.reconcile(blockID: id)
+        }
     }
 
     private static func reconcileAdHoc(_ activity: DeviceActivityName) {

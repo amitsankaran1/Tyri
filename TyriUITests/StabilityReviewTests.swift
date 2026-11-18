@@ -114,6 +114,23 @@ import XCTest
         XCTAssertTrue(report.label.contains("Screen Time is not authorized"))
         capture("expanded-diagnostics-fixture")
     }
+    func testScheduledManualDeadlineAndStop() {
+        launch("scheduled-manual")
+        let work = app.buttons["open-block-Work focus"]
+        scroll(work); work.tap()
+        let deadline = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "On until ")).firstMatch
+        XCTAssertTrue(deadline.waitForExistence(timeout: 5))
+        let activeTime = String(deadline.label.dropFirst("On until ".count))
+        capture("scheduled-manual-active-fixture")
+
+        app.buttons["Stop Block now"].tap()
+        let action = app.switches["scheduled-block-now"]
+        scroll(action)
+        XCTAssertEqual(action.label, "Block until " + activeTime)
+        XCTAssertEqual(action.value as? String, "0")
+        capture("scheduled-manual-before-start-fixture")
+    }
+
     func testLargestTextBreakCountdown() {
         launch("break", largeText: true)
         let countdown = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Resumes in")).firstMatch

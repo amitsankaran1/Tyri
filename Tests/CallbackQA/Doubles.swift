@@ -47,8 +47,8 @@ enum SharedDefaults {
  }
 }
 enum Kind { case timer, schedule, tag }
-struct BlockingSchedule {}
-struct BlockRule { var id: UUID = UUID(); var name: String = ""; var appGroupIDs: [UUID] = []; var type: Kind = .timer; var isEnabled = false; var usageLockMinutes = 180; var usageLimitMinutes: Int? = 30; var schedule: BlockingSchedule? = nil }
+struct BlockingSchedule { var repeats = true;}
+struct BlockRule { var id: UUID = UUID(); var name: String = ""; var appGroupIDs: [UUID] = []; var type: Kind = .timer; var isEnabled = false; var usageLockMinutes = 180; var usageLimitMinutes: Int? = 30; var schedule: BlockingSchedule? = nil; var manualScheduleEnd: Date? = nil }
 struct AppGroup: Codable, Equatable { var id = UUID(); var name = "Test list" }
 enum BlockResolution {
  struct Tokens { var apps: Set<Int> = [1]; var categories: Set<Int> = []; var webDomains: Set<Int> = []; var domains: Set<String> = ["example.com"]; var isEmpty: Bool { false } }
@@ -66,6 +66,7 @@ enum BlockingActuator {
  static func clearShields(blockID: UUID) { State.shield = false; State.shields.remove(blockID) }
 }
 enum ScheduleEnforcement {
+ static func manualRegistrationContext(end: Date) -> String { String(end.timeIntervalSinceReferenceDate) }
  static func reconcile(blockID: UUID) {}
  static func reconcile(block: BlockRule, stopMonitoring: Bool = true) {}
  static func registrationContext(_ schedule: BlockingSchedule) -> String { "schedule" }
