@@ -3,7 +3,10 @@ import subprocess, tempfile, os
 root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="tyri-store-durability-") as d:
     d = Path(d)
-    files = [Path(__file__).with_name("main.swift")]
+    files = [Path(__file__).with_name("main.swift"), root / "Shared/BlockingSchedule.swift"]
+    rule = d / "BlockRule.swift"
+    rule.write_text((root / "Shared/BlockRule.swift").read_text().replace("import FamilyControls", ""))
+    files.append(rule)
     for name in ["BlockStore", "AppGroupStore"]:
         relative = "Tyri/Services/" + name + ".swift"
         rev = os.environ.get("QA_REVISION")

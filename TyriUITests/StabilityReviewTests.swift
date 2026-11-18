@@ -9,7 +9,7 @@ import XCTest
         app = XCUIApplication()
     }
     private func launch(_ scenario: String? = nil, largeText: Bool = false) {
-        app.launchEnvironment = ["BLOCK_SEED_DEMO_STATE": "1", "BLOCK_RUN_TEST_HARNESS": scenario == "unreadable" ? "0" : "1"]
+        app.launchEnvironment = ["BLOCK_SEED_DEMO_STATE": "1", "BLOCK_RUN_TEST_HARNESS": ["unreadable", "scheduled-manual"].contains(scenario ?? "") ? "0" : "1"]
         if let scenario { app.launchEnvironment["TYRI_UI_REVIEW"] = scenario }
         if largeText { app.launchArguments = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launch()

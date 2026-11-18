@@ -113,7 +113,13 @@ struct BlockStatusPresentation {
 
     private static func reviewStatus(for block: BlockRule) -> Self? {
         guard let scenario = reviewScenario else { return nil }
-        if scenario == "scheduled-manual", block.type == .schedule { return nil }
+        if scenario == "scheduled-manual", block.type == .schedule {
+            // The empty-token fixture demonstrates copy without asserting an iOS shield.
+            if block.isEnabled, let end = block.manualScheduleEnd {
+                return Self(state: .blocking, detail: BlockingEndDescription.scheduledManualDetail(end: end), end: end)
+            }
+            return Self(state: .off, detail: block.schedule?.summary ?? "No schedule set")
+        }
         if scenario == "attention" {
             return block.type == .timer
                 ? Self(state: .unavailable, detail: "Usage tracking is not registered.")

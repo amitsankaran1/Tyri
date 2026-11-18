@@ -6,7 +6,7 @@ import Foundation
  var registeredUsageIDs:Set<UUID>=[]
 }
 struct Schedule {func activeWindow()->DateInterval?{nil};var summary="Schedule"}
-struct BlockRule {enum Kind{case timer,schedule,tag};var id=UUID();var type:Kind = .timer;var isEnabled=false;var schedule:Schedule?;var usageLimitMinutes:Int?=30;var usageLockMinutes=180}
+struct BlockRule {enum Kind{case timer,schedule,tag};var id=UUID();var type:Kind = .timer;var isEnabled=false;var manualScheduleEnd:Date?;var schedule:Schedule?;var usageLimitMinutes:Int?=30;var usageLockMinutes=180}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-status-\(UUID())")!;enum Keys{static func shieldError(blockID:UUID)->String{"shield.\(blockID)"};static func usageError(blockID:UUID)->String{"usage.\(blockID)"};static func usageLockError(blockID:UUID)->String{"lock.\(blockID)"}}}
 @MainActor class ScreenTimeManager {enum Authorization {case approved,denied};static let shared=ScreenTimeManager();var authorizationStatus:Authorization = .approved;var active=false;func isBlockActive(_ b:BlockRule)->Bool{active}}
 @MainActor class SchedulingManager {static let shared=SchedulingManager();var registrationErrors:[UUID:String]=[:]}
@@ -15,7 +15,7 @@ enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-status-\(UUID
 enum BreakMonitoring {static var paused=false;static func isOnBreak(blockID:UUID)->Bool{paused};static func breakEnd(blockID:UUID)->Date?{Date().addingTimeInterval(300)}}
 enum UsageMonitoring {static var registered=true;static func isUsageMonitorActive(for id:UUID)->Bool{registered}}
 enum UsageProgress {static func reported(blockID:UUID)->Int?{5};static func step(for limit:Int)->Int{1}}
-enum BlockingEndDescription {static func detail(timedEnd:Date?,manual:Bool,tag:Bool)->String{"Active"}}
+enum BlockingEndDescription {static func scheduledManualDetail(end:Date)->String{"On until deadline"};static func detail(timedEnd:Date?,manual:Bool,tag:Bool)->String{"Active"}}
 @main struct Tests {
  @MainActor static func main(){
   let b=BlockRule();var n=0
