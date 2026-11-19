@@ -2,13 +2,15 @@
 
 Implementation task: https://app.notion.com/p/3cb16e0e0e3a81438ddbd3a49c70e1ed
 
-Approved policy: use Xcode Cloud, with app-changing merges to `main` automatically producing an internal TestFlight candidate after successful checks. PR checks are provisioned and main requires all three Xcode Cloud checks. Live activation and revision-specific verification evidence belong in the implementation task linked above; checked-in payloads alone do not prove a service is enabled or a build available. The internal workflow starts disabled until verification and workflow-PR approval. The shared routine now assesses all supported request types under the current Guide/Skills; project execution and delivery capability must actually be verified.
+Approved policy: use Xcode Cloud, with app-changing merges to `main` automatically producing an internal TestFlight candidate after successful checks. PR checks are provisioned and main requires all three Xcode Cloud checks. Live activation and revision-specific verification evidence belong in the implementation task linked above; checked-in payloads alone do not prove a service is enabled or a build available. The enabled internal workflow and verified setup checkpoint are described below. The shared routine now assesses all supported request types under the current Guide/Skills; project execution and delivery capability must actually be verified.
 
-## Source prerequisite
+## Verified delivery setup
 
-On November 9, 2026, PR #24 was merged with Amit's reconciliation authorization. Canonical `main` is now `cebf0b194258d3a7e979465c06d29df59382aacd`, containing the released 2.4 build 7 source and its receipts. The release receipt identifies built source `068d1904e719d3daca4d50ef91c719f232e85ca0`, successful processing and availability in `Amit Internal`; physical enforcement remains unverified. Verify the current Apple account record before selecting another number.
+Automatic internal delivery and the GitHub receipt adapter were verified after PRs #25 and #28. The [implementation task](https://app.notion.com/p/3cb16e0e0e3a81438ddbd3a49c70e1ed) records candidate 20, source `ccd1d1d4cf9c5de86a1697c79a41445c1910713b`, Apple processing and Amit Internal availability. This is a dated setup checkpoint. Inspect current run receipts for the source being delivered.
 
-Workflow PR #25 includes that main merge and is checked against the combined source. Keep `deferred/nl-creation-2.4` out of this rollout. The one-time reconciliation does not authorize future automatic merges or release triggers.
+The internal candidate workflow is enabled for approved app-changing main merges. Required PR checks and explicit revision-specific merge approval apply. The owner-only fresh-build command route still needs its own end-to-end verification according to that checkpoint.
+
+Use [Builds & Tests](https://app.notion.com/p/41d16e0e0e3a81e7a35af19f0fa12c05) for build/test evidence and link the original task. Record exact source, version/build, run receipt, environment and remaining device acceptance. Detailed commands stay in this repository.
 
 ## Approved Xcode Cloud configuration
 

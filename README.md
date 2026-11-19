@@ -1,3 +1,49 @@
+# Tyri
+
+Tyri helps people intentionally block apps and websites using reusable lists, schedules, usage limits and NFC tags.
+
+## Quickstart
+
+Use full Xcode 27.2 with the iOS 27.2 simulator runtime. Open `Tyri.xcodeproj` and select the shared `Tyri` scheme. App and monitor deployment targets are iOS 16. The UI test target requires iOS 17.
+
+Run deterministic checks from the repository root.
+
+```sh
+bash scripts/check.sh
+```
+
+Find the iPhone 18 Pro on iOS 27.2 and copy its UDID. An explicit destination keeps parallel sessions on their own simulator.
+
+```sh
+xcrun simctl list devices available
+export TYRI_SIMULATOR_ID='<simulator UDID>'
+xcodebuild -project Tyri.xcodeproj -scheme Tyri \
+  -destination "platform=iOS Simulator,id=$TYRI_SIMULATOR_ID" \
+  -derivedDataPath /tmp/tyri-local-derived build
+xcodebuild -project Tyri.xcodeproj -scheme Tyri \
+  -destination "platform=iOS Simulator,id=$TYRI_SIMULATOR_ID" \
+  -derivedDataPath /tmp/tyri-local-derived \
+  -resultBundlePath /tmp/tyri-ui-tests-$(date +%Y%m%d-%H%M%S).xcresult test
+```
+
+Use a distinct DerivedData path for concurrent worktrees. UI tests already supply `TYRI_UI_REVIEW` scenarios. Simulator compilation and fixtures cover selected UI and logic behavior. Verify NFC, authorization, actual shielding and background timing on the affected physical device.
+
+For changed UI, inspect screenshots and attach captioned evidence to the existing Notion task or Builds & Tests record. Label fixtures and device limitations.
+
+## Development and delivery
+
+- [Agent workflow](docs/agent-workflow.md) and [state machines](docs/STATE_MACHINES.md)
+- [iOS checks and internal TestFlight delivery](docs/ios-delivery.md)
+- [Build requests and receipts](docs/testflight-agent-command.md)
+- [Device acceptance checklist](release/WhatToTest.txt)
+- [Tyri overview](https://app.notion.com/p/2e616e0e0e3a80148841ff8ca2cb3647) and [Builds & Tests](https://app.notion.com/p/41d16e0e0e3a81e7a35af19f0fa12c05)
+
+TestFlight is the standard device acceptance path. Preserve the app and monitor bundle IDs, App Group and saved data. Install updates over existing copies to retain upgrade evidence. Follow the linked delivery runbook for approved source, signing, internal availability and device acceptance.
+
+## Original design reference
+
+The following design document describes the early app. Consult current source and the linked state machines for implementation details.
+
 # Tyri - Design Documentation
 
 ## App Overview
