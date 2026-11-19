@@ -14,7 +14,7 @@ Use [Builds & Tests](https://app.notion.com/p/41d16e0e0e3a81e7a35af19f0fa12c05) 
 
 ## Approved Xcode Cloud configuration
 
-Two workflows use `Tyri.xcodeproj`, shared scheme `Tyri`, pinned Xcode 27.2 (27B52) and macOS 27.2 (26B123), with iPhone 18 Pro / iOS 27.2 simulator tests. Available cloud versions were verified through Apple's API. [CLI configuration, identities and provisioning payloads](../ci_scripts/xcode-cloud/README.md) are checked in for review; Git file changes alone do not change Apple's workflow settings.
+Two workflows use `Tyri.xcodeproj`, shared scheme `Tyri`, and Xcode 27.2 (27B52), with iPhone 18 Pro / iOS 27.2 simulator tests. On November 19, 2026, the PR-check workflow was updated to supported macOS 27.2.1 (26B131) after Apple retired its macOS 27.2 (26B123) host. Apple’s API confirmed compatibility with Xcode 27.2. The internal-candidate workflow retains the earlier host pin and needs an availability check before its next run. [CLI configuration, identities and provisioning payloads](../ci_scripts/xcode-cloud/README.md) are checked in for review; Git file changes alone do not change Apple's workflow settings.
 
 | Workflow | Start | Checks/actions | Delivery |
 | --- | --- | --- | --- |
