@@ -11,7 +11,7 @@ Manage this setup with `asc` (App Store Connect CLI), not Xcode window automatio
 - Existing internal group: `ef128175-ca20-4e29-8e04-b0d222463e8d` (`Amit Internal`).
 - Original Default workflow: `F80F0303-E001-4811-A15A-E721A7561AD5`.
 
-Pin Xcode 27.2 (27B52) and macOS 27.2 (26B123). The test destination is iPhone 18 Pro / iOS 27.2. Update pins deliberately when Apple retires a toolchain; verify the available versions first.
+The PR-check workflow pins Xcode 27.2 (27B52) and macOS 27.2.1 (26B131), verified against Apple’s supported combinations on November 19, 2026. The original macOS 27.2 (26B123) pin was retired. The internal-candidate payload retains its original pin and needs an availability check before its next run. The test destination is iPhone 18 Pro / iOS 27.2. Update pins deliberately when Apple retires a toolchain; verify the available versions first.
 
 ## Authentication
 

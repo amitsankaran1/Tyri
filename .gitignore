@@ -2,3 +2,6 @@
 xcuserdata/
 *.xcuserstate
 TestFlight/WhatToTest.en-US.txt
+
+DerivedData.noindex/
+*.xcresult/

@@ -9,17 +9,18 @@ This is a project delivery adapter, not another coding agent or task dispatcher.
 The existing hourly routine still owns Notion pickup and reconciliation. No new
 Notion states or duplicate work records are introduced.
 
-## Activation boundary
+## Verified activation and access requirements
 
-Prepared code does not mean the adapter is active. It needs an approved merge to
-main, the existing internal Xcode Cloud workflow enabled, and Apple API access in
-the GitHub environment tyri-internal-delivery. The environment must permit only
+The automatic candidate and receipt path was verified after PRs #25 and #28. See
+[the dated setup checkpoint](ios-delivery.md#verified-delivery-setup). The existing
+internal Xcode Cloud workflow uses Apple API access in the GitHub environment
+tyri-internal-delivery. The explicit fresh-build route needs its own acceptance. The environment must permit only
 the main branch; main retains required PR checks and human merge approval.
 
-The proposed credential destination is that environment in amitsankaran1/Tyri:
+The configured credential destination is that environment in amitsankaran1/Tyri:
 ASC_PRIVATE_KEY is an environment secret; ASC_KEY_ID and ASC_ISSUER_ID are
 environment variables. Use the existing approved Tyri automation Developer key,
-not another key. Copying it off the Mac requires Amit's explicit approval first.
+not another key. Any further credential transfer requires Amit's explicit approval first.
 Apple's team key is account-wide; repository/environment restrictions do not
 change that Apple scope. Do not put it in Git, Notion, prompts, logs or PR jobs.
 
