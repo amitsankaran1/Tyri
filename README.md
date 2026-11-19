@@ -28,7 +28,7 @@ xcodebuild -project Tyri.xcodeproj -scheme Tyri \
 
 Use a distinct DerivedData path for concurrent worktrees. UI tests already supply `TYRI_UI_REVIEW` scenarios. Simulator compilation and fixtures cover selected UI and logic behavior. Verify NFC, authorization, actual shielding and background timing on the affected physical device.
 
-For changed UI, inspect screenshots and attach captioned evidence to the existing Notion task or Builds & Tests record. Label fixtures and device limitations.
+For changed UI, inspect screenshots and save captioned evidence in the Notion Docs database with a link to Tyri. Link that document from the existing task or Builds & Tests record. Label fixtures and device limitations.
 
 ## Development and delivery
 
