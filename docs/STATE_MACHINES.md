@@ -344,6 +344,27 @@ States: cold; initializing stores/authorization; migrating; restoring registrati
 
 SM-03 fixes expired-lock ordering and missing expiry repair. The signed native UI runs exercise initialization and the existing launch assertion harness. There is no claim that background timer execution substitutes for a registered extension callback.
 
+## Machine 16: Vacation mode (TSK-174)
+
+Source: [VacationMode](../Shared/VacationMode.swift), [VacationModeView](../Tyri/Views/VacationModeView.swift), hooks in [ScheduleEnforcement](../Shared/ScheduleEnforcement.swift), `UsageMonitoring.startLockout`, `ScreenTimeManager.isBlockActive`, [ForegroundRecovery](../Tyri/Services/ForegroundRecovery.swift) and the monitor extension.
+
+States: none; paused(plan P, blocks → pause start, resume instant R); resume monitor pending/registered/failed; expired awaiting reconcile. One plan at a time; each change creates a new plan ID and monitor name `vacation.<plan ID>`.
+
+Invariants: the pause is time-based (`now < R`); vacation never lifts a shield that is already up; only automatic activation (schedule windows that begin at or after a block's pause start, usage-limit lockouts) is suppressed; Block now and NFC tag toggles still enforce; R is an absolute instant, and its chosen time zone is used only for display; changing the plan keeps each block's original pause start; ending early only adds protection.
+
+| Event | Guard / transition |
+|---|---|
+| Start/change | Nonempty selection, R > now → persist plan (R floored to the minute); dropped blocks resume now; old plan monitor invalidated; recovery registers `vacation.<id>` |
+| Schedule window callback / reconcile | Window start ≥ block's pause start and now < R → treated as outside the window; earlier windows continue |
+| Usage threshold | Paused → no lockout; mark suppressed limit; existing lock keeps its deadline |
+| Block now / tag on | Unchanged; enforces normally |
+| Vacation callback before R | No-op |
+| Vacation callback / foreground / 30s tick at or after R | Clear plan; reconcile paused schedule blocks (a window in progress re-shields); suppressed timers get a fresh allowance (extension: register inline; app: retire the old allowance for recovery to replace) |
+| End now | Same as resume, immediately |
+| Resume registration fails | Error shown; schedule blocks still resume at their next window by time; open Tyri to restore a mid-window or usage resume |
+
+Device Activity limits an interval to one week, so the resume monitor uses the existing one-week deadline schedule (start at max(now, R − 7 days)). Evidence: `python3 Tests/VacationQA/run.py` (28 checks, production code with OS doubles, mutation-checked: disabling suppression fails 11), plus MutationStateQA and RecoveryPresentationQA vacation checks and `TyriUITests/VacationModeTests`. Background resume, actual shielding and travel across time zones require device acceptance.
+
 ## Verification ledger and reproducible commands
 
 Use this checkout as cwd. `QA_REVISION=dcab8bf` runs new regression cases against baseline production code where supported. Test doubles replace unavailable Apple frameworks, not the production transition bodies.

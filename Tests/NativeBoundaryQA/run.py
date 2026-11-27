@@ -41,8 +41,9 @@ enum NativeProbe {
 '''
     (temp / "Doubles.swift").write_text(base)
     files = [temp / "Doubles.swift"]
-    for relative in ["TyriMonitor/TyriMonitorExtension.swift", "Shared/UsageMonitoring.swift", "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift", "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift", "Shared/MonitorLedger.swift", "Shared/MonitorRegistration.swift", "Shared/EnforcementTransaction.swift"]:
+    for relative in ["TyriMonitor/TyriMonitorExtension.swift", "Shared/UsageMonitoring.swift", "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift", "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift", "Shared/MonitorLedger.swift", "Shared/MonitorRegistration.swift", "Shared/EnforcementTransaction.swift", "Shared/VacationMode.swift"]:
         rev = os.environ.get("QA_REVISION")
+        if relative == "Shared/VacationMode.swift" and rev: continue
         source = subprocess.check_output(["git", "show", rev + ":" + relative], cwd=root, text=True) if rev else (root / relative).read_text()
         source = source.replace("import DeviceActivity", "").replace("import FamilyControls", "").replace("Date()", "QAClock.now")
         path = temp / Path(relative).name

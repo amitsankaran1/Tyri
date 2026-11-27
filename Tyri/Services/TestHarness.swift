@@ -36,6 +36,7 @@ enum TestHarness {
 
         if let session = AdHocMonitoring.session { AdHocMonitoring.finish(id: session.id) }
         DebugSimulator.resetAllRuntime()
+        VacationMode.end()
         for block in BlockStore.shared.blocks { BlockStore.shared.delete(id: block.id) }
         for group in AppGroupStore.shared.groups { AppGroupStore.shared.delete(id: group.id) }
 

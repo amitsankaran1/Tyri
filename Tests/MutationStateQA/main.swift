@@ -1,6 +1,7 @@
 import Foundation
 enum BlockingActuator { static var persistedOwnerIDs: Set<UUID> = [] }
-struct Schedule {var active=true;func activeWindow()->Int?{active ? 1:nil}}
+struct Schedule {var active=true;func activeWindow()->DateInterval?{active ? DateInterval(start:Date(timeIntervalSince1970:0),duration:3600):nil}}
+enum VacationMode {static var paused:Set<UUID>=[];static func suppresses(_ id:UUID,windowStart:Date,at now:Date=Date())->Bool{paused.contains(id)}}
 struct BlockRule {enum Kind{case timer,schedule,tag};var id=UUID();var type:Kind = .timer;var appGroupIDs:[UUID]=[];var isEnabled=false;var schedule:Schedule?}
 enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-mutation-\(UUID())")!;enum Keys{static func running(blockID:UUID)->String{"running.\(blockID)"};static func usageLockEnd(blockID:UUID)->String{"lock.\(blockID)"};static func scheduleReleasedUntil(blockID:UUID)->String{"release.\(blockID)"}}}
 class BlockStore {
@@ -62,6 +63,13 @@ class BlockEditor {var blockID=UUID();var showActiveDeleteAlert=false;let blockS
   check(ScreenTimeManager.shared.isBlockActive(scheduled),"SM-06 calendar ownership protects edits before start callback arrives")
   var ended=scheduled;ended.schedule=Schedule(active:false);SharedDefaults.suite.set(true,forKey:SharedDefaults.Keys.running(blockID:ended.id))
   check(!ScreenTimeManager.shared.isBlockActive(ended),"SM-06 stale running flag cannot keep expired schedule logically active")
+  if ProcessInfo.processInfo.environment["QA_REVISION"]==nil {
+   VacationMode.paused=[scheduled.id]
+   check(!ScreenTimeManager.shared.isBlockActive(scheduled),"TSK-174 a vacation-suppressed window is not an active owner")
+   var manual=scheduled;manual.isEnabled=true
+   check(ScreenTimeManager.shared.isBlockActive(manual),"TSK-174 explicit Block now stays active during vacation")
+   VacationMode.paused=[]
+  }
   if failures>0{exit(1)}
  }
 }

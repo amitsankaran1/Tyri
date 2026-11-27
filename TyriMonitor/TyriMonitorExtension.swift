@@ -11,6 +11,7 @@
 //    - "usage.<UUID>"                        → all-day usage counting window
 //    - "lock.<UUID>"                         → one-shot usage lockout window
 //    - "break.<UUID>"                        → one-shot break window (shield lifted)
+//    - "vacation.<plan UUID>"                → one-shot vacation resume deadline
 //
 //  Required target setup (do in Xcode UI):
 //    - Target: TyriMonitor (Device Activity Monitor Extension template)
@@ -40,6 +41,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         defer { transition.finish() }
 
         super.intervalDidStart(for: activity)
+        if activity.rawValue.hasPrefix(VacationMode.namespacePrefix) { VacationMode.reconcile(inlineRearm: true); return }
         log.notice("Interval start \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
         guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }
@@ -62,6 +64,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         defer { transition.finish() }
 
         super.intervalDidEnd(for: activity)
+        if activity.rawValue.hasPrefix(VacationMode.namespacePrefix) { VacationMode.reconcile(inlineRearm: true); return }
         log.notice("Interval end \(activity.rawValue, privacy: .public)")
         if activity.rawValue.hasPrefix("manual.") { Self.reconcileManualEnd(activity); return }
         if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
@@ -115,6 +118,7 @@ class TyriMonitorExtension: DeviceActivityMonitor {
         defer { transition.finish() }
 
         super.intervalWillEndWarning(for: activity)
+        if activity.rawValue.hasPrefix(VacationMode.namespacePrefix) { VacationMode.reconcile(inlineRearm: true); return }
         if activity.rawValue.hasPrefix("manual.") { Self.reconcileManualEnd(activity); return }
         if activity.rawValue.hasPrefix("adhoc.") { Self.reconcileAdHoc(activity); return }
         guard let (kind, blockID) = Self.parse(activity), Self.accept(activity, kind: kind, id: blockID) else { return }

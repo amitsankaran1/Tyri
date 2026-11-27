@@ -253,6 +253,12 @@ enum UsageMonitoring {
             reconcileLockout(blockID: blockID, now: now)
             return
         }
+        // Vacation pauses automatic lockouts; the block gets a fresh allowance at resume.
+        if VacationMode.pauses(blockID, at: now) {
+            VacationMode.recordSuppressedLimit(blockID: blockID)
+            EnforcementDiagnostics.record("vacation", blockID: blockID, detail: "Usage limit reached during vacation; lockout suppressed")
+            return
+        }
         let end = now.addingTimeInterval(TimeInterval(max(1, minutes) * 60))
         SharedDefaults.suite.set(end, forKey: key)
         SharedDefaults.suite.set(block.isEnabled, forKey: "usageLockManual.\(blockID)")

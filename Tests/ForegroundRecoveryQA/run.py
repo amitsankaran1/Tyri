@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix="tyri-foreground-recovery-") as director
     files = [temp / "Doubles.swift", Path(__file__).with_name("main.swift")]
     for relative in ["Tyri/Services/ForegroundRecovery.swift", "TyriMonitor/TyriMonitorExtension.swift",
                      "Shared/UsageMonitoring.swift", "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift",
-                     "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift"]:
+                     "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift", "Shared/VacationMode.swift"]:
         source = (root / relative).read_text()
         for module in ["Combine", "DeviceActivity", "FamilyControls", "UIKit"]:
             source = source.replace("import " + module, "")

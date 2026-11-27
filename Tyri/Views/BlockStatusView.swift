@@ -83,6 +83,9 @@ struct BlockStatusPresentation {
             let timedEnd = UsageLimitManager.shared.lockEnd(for: block.id) ?? block.schedule?.activeWindow()?.end
             let end = manualEnd ?? (manual ? nil : timedEnd)
             var detail = manualDetail ?? BlockingEndDescription.detail(timedEnd: timedEnd, manual: manual, tag: block.type == .tag)
+            if VacationMode.pauses(block.id) {
+                detail += " Vacation pauses its automatic blocking after this ends."
+            }
             if let wait = CooldownManager.shared.activeCooldown, wait.blockID == block.id {
                 detail += " " + (wait.endsAt > Date()
                     ? "Apps stay blocked. You can stop early at \(wait.endsAt.formatted(date: .omitted, time: .shortened))."
@@ -91,6 +94,9 @@ struct BlockStatusPresentation {
             let lockEnd = block.type == .timer ? UsageLimitManager.shared.lockEnd(for: block.id) : nil
             return Self(state: .blocking, detail: detail, end: end,
                         lockStart: lockEnd?.addingTimeInterval(-Double(block.usageLockMinutes * 60)), lockEnd: lockEnd)
+        }
+        if VacationMode.pauses(block.id), let plan = VacationMode.pendingPlan() {
+            return Self(state: .off, detail: "On vacation · Resumes \(plan.resumeDescription())")
         }
         if block.type == .timer {
             guard ForegroundRecovery.shared.registeredUsageIDs.contains(block.id) else {
@@ -113,6 +119,8 @@ struct BlockStatusPresentation {
 
     private static func reviewStatus(for block: BlockRule) -> Self? {
         guard let scenario = reviewScenario else { return nil }
+        // Vacation review uses the production status path with seeded rules.
+        if scenario == "vacation" { return nil }
         if scenario == "scheduled-manual", block.type == .schedule {
             // The empty-token fixture demonstrates copy without asserting an iOS shield.
             if block.isEnabled, let end = block.manualScheduleEnd {

@@ -140,7 +140,9 @@ class ScreenTimeManager: ObservableObject {
     func isBlockActive(_ block: BlockRule) -> Bool {
         let suite = SharedDefaults.suite
         let released = (suite.object(forKey: SharedDefaults.Keys.scheduleReleasedUntil(blockID: block.id)) as? Date).map { $0 > Date() } ?? false
-        let scheduledActive = block.type == .schedule && block.schedule?.activeWindow() != nil && !released
+        let window = block.type == .schedule ? block.schedule?.activeWindow() : nil
+        let paused = window.map { VacationMode.suppresses(block.id, windowStart: $0.start) } ?? false
+        let scheduledActive = window != nil && !released && !paused
         let usageLocked = (suite.object(forKey: SharedDefaults.Keys.usageLockEnd(blockID: block.id)) as? Date).map { $0 > Date() } ?? false
         return block.isEnabled || scheduledActive || usageLocked
     }

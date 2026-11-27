@@ -8,7 +8,8 @@ repo = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="tyri-callback-qa-") as directory:
     temp = Path(directory)
     files = [Path(__file__).with_name("Doubles.swift")]
-    for relative in ["TyriMonitor/TyriMonitorExtension.swift", "Shared/UsageMonitoring.swift", "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift", "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift"]:
+    for relative in ["TyriMonitor/TyriMonitorExtension.swift", "Shared/UsageMonitoring.swift", "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift", "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift", "Shared/VacationMode.swift"]:
+        if relative == 'Shared/VacationMode.swift' and os.environ.get('QA_REVISION'): continue
         if relative == 'Shared/EnforcementDiagnostics.swift' and os.environ.get('QA_REVISION'): continue
         if relative == 'Shared/UsageProgress.swift' and os.environ.get('QA_REVISION') == '4a39721': continue
         source = subprocess.check_output(['git','show',os.environ['QA_REVISION']+':'+relative],cwd=repo,text=True) if os.environ.get('QA_REVISION') else (repo / relative).read_text()

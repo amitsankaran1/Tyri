@@ -18,6 +18,7 @@ struct HomeView: View {
     @State private var newBlock: BlockRule?
     @State private var showSettings = false
     @State private var showAdHoc = false
+    @State private var showVacation = false
     @StateObject private var adHoc = AdHocManager.shared
     @StateObject private var recovery = ForegroundRecovery.shared
 
@@ -99,6 +100,12 @@ struct HomeView: View {
                         Label(adHocLabel, systemImage: adHoc.enforcementError == nil ? "timer" : "exclamationmark.circle")
                     }
                     .accessibilityIdentifier("ad-hoc-block")
+                    if !blockStore.blocks.filter({ $0.type != .tag }).isEmpty || vacation != nil {
+                        Button { showVacation = true } label: {
+                            Label(vacationLabel, systemImage: "airplane")
+                        }
+                        .accessibilityIdentifier("vacation-mode")
+                    }
                 }
                 blockSection("Blocking now", blocks: active)
                 blockSection("Tracking usage", blocks: tracking)
@@ -136,6 +143,7 @@ struct HomeView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $showAdHoc) { NavigationStack { AdHocBlockView() } }
+        .sheet(isPresented: $showVacation, onDismiss: { refreshDate = Date() }) { NavigationStack { VacationModeView() } }
         .sheet(isPresented: $showSettings) { NavigationStack { SettingsView() } }
         .sheet(item: $newBlock) { block in
             NavigationStack {
@@ -199,6 +207,17 @@ struct HomeView: View {
         }
     }
 
+    private var vacation: VacationPlan? {
+        _ = refreshDate
+        return VacationMode.pendingPlan()
+    }
+
+    private var vacationLabel: String {
+        guard let vacation else { return "Pause blocks for vacation" }
+        let count = vacation.blockIDs.count
+        return "Vacation · \(count) block\(count == 1 ? "" : "s") paused until \(vacation.resumeDescription())"
+    }
+
     private var adHocLabel: String {
         guard let session = adHoc.session else { return "Block for a while" }
         if adHoc.enforcementError != nil { return "\(session.group.name) · Needs attention" }
@@ -238,6 +257,9 @@ struct HomeView: View {
         }
         if blockStore.blocks.contains(where: { status($0).state == .checking }) {
             return .init(state: .checking, detail: "Checking saved usage limits with Screen Time.")
+        }
+        if let vacation {
+            return .init(state: .off, detail: "On vacation. Paused blocks resume \(vacation.resumeDescription()).")
         }
         return .init(state: .off, detail: "No blocks are on right now. Your scheduled and tag blocks are ready when you need them.")
     }
