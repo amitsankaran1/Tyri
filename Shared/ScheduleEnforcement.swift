@@ -39,7 +39,10 @@ enum ScheduleEnforcement {
         let releasedUntil = defaults.object(forKey: releaseKey) as? Date
         if let releasedUntil, releasedUntil <= now { defaults.removeObject(forKey: releaseKey) }
 
-        if let window, !(releasedUntil.map { $0 > now } ?? false) {
+        // Vacation suppresses windows that begin after the pause; it never lifts
+        // an activation that was already under way.
+        let paused = window.map { VacationMode.suppresses(block.id, windowStart: $0.start, at: now) } ?? false
+        if let window, !(releasedUntil.map { $0 > now } ?? false), !paused {
             let previousStart = defaults.object(forKey: windowKey) as? Date
             // Adopt an existing activation on upgrade without cancelling its break.
             if previousStart != window.start &&

@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix="tyri-callback-lifecycle-") as directory
                      "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift",
                      "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift",
                      "Shared/EnforcementTransaction.swift", "Shared/MonitorLedger.swift",
-                     "Shared/MonitorRegistration.swift"]:
+                     "Shared/MonitorRegistration.swift", "Shared/VacationMode.swift"]:
         source = (root / relative).read_text()
         for module in ["DeviceActivity", "FamilyControls"]:
             source = source.replace("import " + module, "")

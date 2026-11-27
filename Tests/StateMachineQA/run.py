@@ -14,7 +14,8 @@ with tempfile.TemporaryDirectory(prefix='tyri-state-qa-') as d:
     base=base.replace(stop, stop + '; let callback = Self.onStop; Self.onStop = nil; callback?()')
     (d/'Doubles.swift').write_text(base)
     files=[d/'Doubles.swift',r/'Tests/StateMachineQA/main.swift']
-    for f in ['Shared/UsageMonitoring.swift','Shared/BreakMonitoring.swift','Shared/AdHocMonitoring.swift','Shared/UsageProgress.swift','Shared/EnforcementDiagnostics.swift']:
+    for f in ['Shared/UsageMonitoring.swift','Shared/BreakMonitoring.swift','Shared/AdHocMonitoring.swift','Shared/UsageProgress.swift','Shared/EnforcementDiagnostics.swift','Shared/VacationMode.swift']:
+        if f=='Shared/VacationMode.swift' and os.environ.get('QA_REVISION'): continue
         p=d/Path(f).name;p.write_text(source(f).replace('import DeviceActivity','').replace('import FamilyControls',''));files.append(p)
     if (r/'Shared/EnforcementTransaction.swift').exists():
         files.append(r/'Shared/EnforcementTransaction.swift')

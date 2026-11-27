@@ -18,8 +18,9 @@ with tempfile.TemporaryDirectory(prefix="tyri-usage-rearm-") as directory:
                      "Shared/BreakMonitoring.swift", "Shared/AdHocMonitoring.swift",
                      "Shared/UsageProgress.swift", "Shared/EnforcementDiagnostics.swift",
                      "Shared/EnforcementTransaction.swift", "Shared/MonitorLedger.swift",
-                     "Shared/MonitorRegistration.swift"]:
+                     "Shared/MonitorRegistration.swift", "Shared/VacationMode.swift"]:
         revision = os.environ.get("QA_REVISION")
+        if relative == "Shared/VacationMode.swift" and revision: continue
         source = (subprocess.check_output(["git", "show", revision + ":" + relative], cwd=repo, text=True)
                   if revision else (repo / relative).read_text())
         source = source.replace("import DeviceActivity", "").replace("import FamilyControls", "")

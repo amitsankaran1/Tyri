@@ -286,6 +286,10 @@ final class ForegroundRecovery: ObservableObject {
                                     detail: "App recovery result committed: \(job.ticket.name); requested: \(ISO8601DateFormatter().string(from: outcome.requestedAt)); returned: \(ISO8601DateFormatter().string(from: outcome.returnedAt)); succeeded: \(outcome.succeeded); publication: \(result)")
                             }
                             if result == .promoted || result == .alreadyAccepted { observed.insert(job.ticket.name) }
+                            if (result == .promoted || result == .alreadyAccepted),
+                               job.ticket.namespace.hasPrefix(VacationMode.namespacePrefix) {
+                                SharedDefaults.suite.removeObject(forKey: VacationMode.errorKey)
+                            }
                             if result == .promoted || result == .alreadyAccepted,
                                 let id = Self.blockID(job.ticket.namespace)
                             {
@@ -367,6 +371,10 @@ final class ForegroundRecovery: ObservableObject {
     }
 
     private func context(_ namespace: String) -> String? {
+        if namespace.hasPrefix(VacationMode.namespacePrefix) {
+            guard let plan = VacationMode.pendingPlan(), VacationMode.namespace(plan) == namespace else { return nil }
+            return VacationMode.registrationContext(plan)
+        }
         guard let id = Self.blockID(namespace) else { return nil }
         let defaults = SharedDefaults.suite
         if namespace.hasPrefix("adhoc.") {
@@ -459,6 +467,8 @@ final class ForegroundRecovery: ObservableObject {
             AdHocMonitoring.finish(id: session.id, stopMonitoring: false)
             changed = true
         }
+        // Expire before schedule reconciliation so a resumed window re-shields now.
+        if VacationMode.reconcile(now: now) { changed = true }
         return changed
     }
 
@@ -573,6 +583,11 @@ final class ForegroundRecovery: ObservableObject {
                 "adhoc.\(session.id.uuidString)", legacy: "adhoc.\(session.id.uuidString)",
                 schedule: deadlineSchedule(session.endsAt))
         }
+        if let vacation = VacationMode.pendingPlan() {
+            // Vacations can exceed Device Activity's one-week interval limit.
+            plan(VacationMode.namespace(vacation), legacy: VacationMode.namespace(vacation),
+                 schedule: deadlineSchedule(vacation.resumeAt, limitToOneWeek: true))
+        }
         return jobs
     }
 
@@ -593,6 +608,12 @@ final class ForegroundRecovery: ObservableObject {
     }
 
     private func publishFailure(_ ticket: MonitorReservation, detail: String?, errors: inout [UUID: String]) {
+        if ticket.namespace.hasPrefix(VacationMode.namespacePrefix) {
+            SharedDefaults.suite.set(
+                "Automatic resume couldn't be scheduled. Paused blocks still resume at their next scheduled time, or open Tyri after your return time.",
+                forKey: VacationMode.errorKey)
+            return
+        }
         guard let id = Self.blockID(ticket.namespace) else { return }
         if ticket.namespace.hasPrefix("manual."), BlockResolution.loadBlock(id: id)?.schedule?.repeats == false {
             errors[id] = "Automatic end could not be restored. Open Tyri at the end of this session."

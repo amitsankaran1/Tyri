@@ -15,6 +15,8 @@ enum SharedDefaults {static let suite=UserDefaults(suiteName:"tyri-status-\(UUID
 enum BreakMonitoring {static var paused=false;static func isOnBreak(blockID:UUID)->Bool{paused};static func breakEnd(blockID:UUID)->Date?{Date().addingTimeInterval(300)}}
 enum UsageMonitoring {static var registered=true;static func isUsageMonitorActive(for id:UUID)->Bool{registered}}
 enum UsageProgress {static func reported(blockID:UUID)->Int?{5};static func step(for limit:Int)->Int{1}}
+struct VacationPlan {var resumeAt=Date().addingTimeInterval(86400);func resumeDescription()->String{"Tue, Dec 2, 6:00 AM"}}
+enum VacationMode {static var paused:Set<UUID>=[];static func pauses(_ id:UUID,at now:Date=Date())->Bool{paused.contains(id)};static func pendingPlan(now:Date=Date())->VacationPlan?{paused.isEmpty ? nil:VacationPlan()}}
 enum BlockingEndDescription {static func scheduledManualDetail(end:Date)->String{"On until deadline"};static func detail(timedEnd:Date?,manual:Bool,tag:Bool)->String{"Active"}}
 @main struct Tests {
  @MainActor static func main(){
@@ -22,6 +24,14 @@ enum BlockingEndDescription {static func scheduledManualDetail(end:Date)->String
   ForegroundRecovery.shared.registeredUsageIDs=[b.id]
   func check(_ yes:Bool,_ name:String){precondition(yes,name);n+=1}
   check(BlockStatusPresentation.current(for:b).state == .tracking,"healthy timer remains tracking")
+  VacationMode.paused=[b.id]
+  let vacation=BlockStatusPresentation.current(for:b)
+  check(vacation.state == .off && vacation.detail.contains("On vacation") && vacation.detail.contains("Tue, Dec 2"),"TSK-174 paused timer shows vacation and resume time instead of tracking")
+  ScreenTimeManager.shared.active=true
+  let finishing=BlockStatusPresentation.current(for:b)
+  check(finishing.state == .blocking && finishing.detail.contains("after this ends"),"TSK-174 an activation already under way stays blocking and says vacation follows")
+  ScreenTimeManager.shared.active=false
+  VacationMode.paused=[]
   ForegroundRecovery.shared.isChecking=true
   check(BlockStatusPresentation.current(for:b).state == .tracking,"routine observation retains a healthy confirmed timer")
   ForegroundRecovery.shared.registeredUsageIDs=[]
